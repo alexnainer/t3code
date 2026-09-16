@@ -1,6 +1,7 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
+  ThreadId,
   ProviderDriverKind,
   ProviderInstanceId,
   UsageLimitSourceId,
@@ -734,5 +735,61 @@ describe("serverSettings helpers", () => {
     });
 
     expect(resolved.pauseWhenOnBattery).toBe(false);
+  });
+});
+
+describe("chat folder settings", () => {
+  const projectId = ProjectId.make("project-a");
+  const firstThread = ThreadId.make("first-thread");
+  const secondThread = ThreadId.make("second-thread");
+  const withFolders = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    chatFolders: {
+      features: { projectId, name: "Features" },
+      reviews: { projectId, name: "Reviews" },
+    },
+  });
+
+  it("preserves unrelated folders and chat assignments across independent edits", () => {
+    const first = applyServerSettingsPatch(withFolders, {
+      chatFolderAssignments: { [firstThread]: "features" },
+    });
+    const second = applyServerSettingsPatch(first, {
+      chatFolders: { reviews: { projectId, name: "Code reviews" } },
+      chatFolderAssignments: { [secondThread]: "reviews" },
+    });
+    expect(second.chatFolders.features).toEqual(withFolders.chatFolders.features);
+    expect(second.chatFolderAssignments).toEqual({
+      [firstThread]: "features",
+      [secondThread]: "reviews",
+    });
+  });
+
+  it("moves a chat to one folder and back out", () => {
+    const assigned = applyServerSettingsPatch(withFolders, {
+      chatFolderAssignments: { [firstThread]: "features" },
+    });
+    const moved = applyServerSettingsPatch(assigned, {
+      chatFolderAssignments: { [firstThread]: "reviews" },
+    });
+    expect(moved.chatFolderAssignments[firstThread]).toBe("reviews");
+    expect(
+      applyServerSettingsPatch(moved, {
+        chatFolderAssignments: { [firstThread]: null },
+      }).chatFolderAssignments,
+    ).toEqual({});
+  });
+
+  it("deletes only the folder and its assignments, including stale moves into it", () => {
+    const assigned = applyServerSettingsPatch(withFolders, {
+      chatFolderAssignments: { [firstThread]: "features", [secondThread]: "reviews" },
+    });
+    const deleted = applyServerSettingsPatch(assigned, { chatFolders: { features: null } });
+    expect(deleted.chatFolders).toEqual({ reviews: withFolders.chatFolders.reviews });
+    expect(deleted.chatFolderAssignments).toEqual({ [secondThread]: "reviews" });
+    expect(
+      applyServerSettingsPatch(deleted, {
+        chatFolderAssignments: { [firstThread]: "features" },
+      }).chatFolderAssignments,
+    ).toEqual(deleted.chatFolderAssignments);
   });
 });

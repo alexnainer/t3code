@@ -30,6 +30,7 @@ export function ComposerControl({
 }: ComposerControlProps) {
   return (
     <Button
+      data-composer-control
       className={cn(
         composerControlClassName,
         size === "xs" ? restingComposerControlClassName : expandedComposerControlClassName,
@@ -111,6 +112,7 @@ export function ComposerSelectControl({
 }: ComposerSelectControlProps) {
   return (
     <SelectTrigger
+      data-composer-control
       className={cn(
         composerControlClassName,
         size === "xs" ? restingComposerControlClassName : expandedComposerControlClassName,

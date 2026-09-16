@@ -103,6 +103,13 @@ describe("theme files", () => {
     });
   });
 
+  it("keeps Codex gray secondary text comfortably readable", () => {
+    const colors = BUILT_IN_THEMES.find((theme) => theme.id === "codex-gray")!.colors;
+    expect(contrastRatio(colors.textMuted, colors.canvas)).toBeGreaterThanOrEqual(8);
+    expect(contrastRatio(colors.mutedForeground, colors.muted)).toBeGreaterThanOrEqual(8);
+    expect(contrastRatio(colors.sidebarMutedForeground, colors.sidebar)).toBeGreaterThanOrEqual(8);
+  });
+
   it("derives readable, distinctive vivid palettes from exact seeds", () => {
     const seeds: ReadonlyArray<["light" | "dark", string, string]> = [
       ["light", "#f4f9f2", "#1d8a4e"],

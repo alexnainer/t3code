@@ -9,6 +9,7 @@ import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
+import { NATIVE_MICA_ARGUMENT } from "./window/windowBackdrop.ts";
 
 const SNAP_SHOT_EVENT_TYPES = new Set([
   "requested",
@@ -31,6 +32,8 @@ exposeClerkBridge({ passkeys: true });
 
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Electron exposes the client platform in its sandboxed preload process.
 const clientPlatform = process.platform;
+const hasNativeMica = process.argv.includes(NATIVE_MICA_ARGUMENT);
+const nativeBackdrop = clientPlatform === "win32" && hasNativeMica ? "mica" : null;
 
 if (clientPlatform === "darwin") {
   // Native window buttons do not scale with Chromium zoom. Keep their reserved
@@ -70,6 +73,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return result as ReturnType<DesktopBridge["getAppBranding"]>;
   },
   getClientPlatform: () => clientPlatform,
+  getNativeBackdrop: () => nativeBackdrop,
   setNotificationBadge: (badge) =>
     ipcRenderer.invoke(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, badge),
   onNotificationBadgeClear: (listener) => {

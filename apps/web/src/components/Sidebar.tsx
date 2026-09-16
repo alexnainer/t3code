@@ -1,3 +1,12 @@
+import { detectChatFolderCollision } from "../chatFolders.drag";
+import { ChatFolders } from "./ChatFolders";
+import { useChatFolders } from "../hooks/useChatFolders";
+import {
+  chatFolderKey,
+  groupThreadsByChatFolder,
+  resolveChatFolderDrop,
+  type FolderThread,
+} from "../chatFolders";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
@@ -6,6 +15,7 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import * as Schema from "effect/Schema";
 import {
   DndContext,
+  type CollisionDetection,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -13,7 +23,12 @@ import {
   type DragStartEvent,
   type Modifier,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -21,7 +36,10 @@ import {
   effectiveSnoozed,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
-import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  planPinnedReorder,
+  resolveSettledThreadTimestamp,
+} from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   parseScopedThreadKey,
@@ -196,7 +214,6 @@ import { createSidebarListMotion } from "./Sidebar.motion";
 import {
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
-  ThreadWorktreeIndicator,
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
@@ -538,6 +555,27 @@ function SortableThreadRow(props: {
   return props.children(bag);
 }
 
+function SectionThreadRow(props: {
+  id: string;
+  children: (bag: SortableThreadRowBag) => ReactNode;
+}) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.id,
+    animateLayoutChanges: animateSidebarLayoutChanges,
+  });
+  const bag = useMemo(
+    () => ({
+      listeners,
+      setNodeRef,
+      isDragging,
+      transition,
+      transform: transform ? { ...transform, scaleX: 1, scaleY: 1 } : null,
+    }),
+    [listeners, setNodeRef, transform, transition, isDragging],
+  );
+  return props.children(bag);
+}
+
 // Unsent work shares one look: the new-thread draft rows and thread rows
 // with unsent composer text both use this tint and pen so they read alike.
 const draftSurfaceClassName = "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]";
@@ -771,8 +809,8 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
       >
-        <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
-          <div className="flex h-5 min-w-0 items-center gap-1.5">
+        <div className="relative z-10 h-10 px-[var(--sidebar-row-content-inset)] py-0.5">
+          <div className="flex h-4 min-w-0 items-center gap-1.5">
             <SquarePenIcon aria-hidden className={draftPenClassName} />
             {props.project ? (
               <ProjectFavicon project={props.project} className="size-4 shrink-0" />
@@ -798,7 +836,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               </Tooltip>
             </span>
           </div>
-          <div className="mt-0.5 truncate text-sm font-medium text-foreground/90">{preview}</div>
+          <div className="truncate text-sm font-medium leading-5 text-foreground/90">{preview}</div>
         </div>
       </div>
     </li>
@@ -819,6 +857,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectByKey: ReadonlyMap<string, EnvironmentProject>;
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   scopedProjectKeys: ReadonlySet<string> | null;
+  matchesFolder: (thread: FolderThread) => boolean;
   routeDraftId: string | null;
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
@@ -864,6 +903,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       ) {
         continue;
       }
+      if (!props.matchesFolder({ ...session, id: session.threadId })) continue;
       if (draftKey === props.routeDraftId) {
         // Open draft: render the frozen entry snapshot, or nothing for a
         // draft that has never been left. Gated on the LIVE session above so
@@ -887,6 +927,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     frozenActive,
     props.routeDraftId,
     props.scopedProjectKeys,
+    props.matchesFolder,
   ]);
   const handleDiscard = useCallback(
     (draftId: DraftId) => {
@@ -1580,8 +1621,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         {...sortableRootProps}
         {...(fileDropHandlers ?? {})}
         className={cn(
-          // Matches the h-9 row so unrendered rows never shift the list when they paint.
-          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+          // Matches the h-8 row so unrendered rows never shift the list when they paint.
+          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
           sortable?.isDragging && "relative z-20",
         )}
       >
@@ -1593,8 +1634,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 role="button"
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
+                data-sidebar-chat
+                data-chat-active={props.isActive || undefined}
                 aria-busy={isRegeneratingTitle || undefined}
-                className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
+                className={cn(rowSurfaceClassName, "flex h-8 items-center gap-2 px-2")}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
@@ -1725,16 +1768,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     );
   }
 
-  const diff = latestTurnDiff(thread);
-
   return (
     <li
       data-thread-item
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        // Compact two-line card plus a one-pixel breathing edge on each side.
+        "list-none py-px [content-visibility:auto] [contain-intrinsic-size:auto_42px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1746,6 +1787,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               role="button"
               tabIndex={0}
               data-testid="sidebar-row-card"
+              data-sidebar-chat
+              data-chat-active={props.isActive || undefined}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -1755,8 +1798,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             />
           }
         >
-          <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
+          <div className="relative z-10 h-10 px-[var(--sidebar-row-content-inset)] py-0.5">
+            <div className="flex h-4 min-w-0 items-center gap-1.5">
               {draftIndicator}
               {props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
@@ -1781,7 +1824,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
-                <span className="group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs">
+                <span className="group/sidebar-status-slot relative ml-auto flex h-4 min-w-8 shrink-0 items-stretch justify-end text-xs">
                   {/* Read-only status labels yield to the hover actions. Woke is
                     itself an action, so it stays pointer-enabled and visible
                     while the other controls appear beside it. */}
@@ -1910,67 +1953,34 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="flex h-5 min-w-0 items-center gap-1.5">
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
                 </span>
               ) : null}
-            </div>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-              {/* Always the branch. The plan step used to take this slot while
-                  working, but it truncated to a half-sentence and dropped the
-                  branch, so the row lost its most stable identifier. */}
-              {thread.branch ? (
-                <>
-                  <ThreadWorktreeIndicator thread={thread} />
-                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground/40">
-                    {thread.branch}
-                  </span>
-                </>
-              ) : (
-                <span className="flex-1" />
-              )}
               {terminalStatusIcon}
               {prBadge}
-              {diff ? (
-                <span className="shrink-0 font-mono">
-                  <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
-                  <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
-                </span>
+              {isRemote ? (
+                <EnvironmentMachineIcon
+                  aria-hidden
+                  kind={props.environmentMachine}
+                  className="size-3.5 shrink-0 text-sidebar-muted-foreground/70"
+                />
               ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
-                {isRemote ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-                    <EnvironmentMachineIcon
-                      aria-hidden
-                      kind={props.environmentMachine}
-                      className="size-3.5"
-                    />
-                  </span>
-                ) : null}
-                {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center">
-                    <ProviderInstanceIcon
-                      driverKind={driverKind}
-                      displayName={
-                        providerEntry?.displayName ??
-                        thread.session?.providerName ??
-                        modelInstanceId
-                      }
-                      accentColor={providerEntry?.accentColor}
-                      showBadge={showInstanceBadge}
-                      // Glyph dims, badge stays saturated; offset matches the composer trigger.
-                      iconClassName="size-3.5 opacity-60"
-                      badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
-                    />
-                  </span>
-                ) : null}
-              </span>
+              {driverKind ? (
+                <ProviderInstanceIcon
+                  driverKind={driverKind}
+                  displayName={
+                    providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
+                  }
+                  accentColor={providerEntry?.accentColor}
+                  showBadge={showInstanceBadge}
+                  iconClassName="size-3.5 opacity-60"
+                  badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
+                />
+              ) : null}
             </div>
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
@@ -1980,15 +1990,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     </li>
   );
 });
-
-function latestTurnDiff(
-  thread: SidebarThreadSummary,
-): { insertions: number; deletions: number } | null {
-  // Shells don't carry checkpoint summaries; diff stats render only when the
-  // shell projection grows them. Kept as a seam so the row layout is ready.
-  void thread;
-  return null;
-}
 
 const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   thread: SidebarThreadSummary;
@@ -2130,6 +2131,18 @@ export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
+  const chatFolders = useChatFolders();
+  const {
+    folderKey,
+    menuItems: folderMenuItems,
+    move: moveToFolder,
+    save: saveFolders,
+  } = chatFolders;
+  const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(new Set());
+  const matchesUnassigned = useCallback(
+    (thread: FolderThread) => folderKey(thread) === null,
+    [folderKey],
+  );
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2457,7 +2470,38 @@ export default function Sidebar() {
   // hidden now, and bulk actions must never count or touch invisible rows.
   useEffect(() => {
     clearSelection();
-  }, [clearSelection, projectScopeKey]);
+  }, [clearSelection, projectScopeKey, collapsedFolders]);
+
+  const scopedThreads = useMemo(
+    () =>
+      threads.filter(
+        (thread) =>
+          thread.archivedAt === null &&
+          (scopedProjectKeys === null ||
+            scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+      ),
+    [threads, scopedProjectKeys],
+  );
+  const threadsByFolder = useMemo(
+    () => groupThreadsByChatFolder(sortThreadsForSidebar(scopedThreads), folderKey),
+    [scopedThreads, folderKey],
+  );
+  const visibleFolderThreads = useMemo(
+    () =>
+      chatFolders.folders.flatMap((folder) => {
+        const key = chatFolderKey(folder.environmentId, folder.id);
+        return collapsedFolders.has(key) ? [] : (threadsByFolder.get(key) ?? []);
+      }),
+    [chatFolders.folders, collapsedFolders, threadsByFolder],
+  );
+  const toggleFolder = useCallback((key: string) => {
+    setCollapsedFolders((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const openProjectSettings = useCallback(
     (projectGroup: SidebarProjectSnapshot) => {
@@ -2526,6 +2570,7 @@ export default function Sidebar() {
     const visible = threads.filter(
       (thread) =>
         thread.archivedAt === null &&
+        matchesUnassigned(thread) &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
     );
@@ -2613,16 +2658,21 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    nowMinute,
+    optimisticDrop,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threads,
+    matchesUnassigned,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
-  const searchableThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
-  );
+  const searchableThreads = useMemo(() => sortThreadsForSidebar(scopedThreads), [scopedThreads]);
   const threadSearchResults = useMemo(
     () => searchSidebarThreads(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
@@ -2739,8 +2789,20 @@ export default function Sidebar() {
   }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
 
   const orderedThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...visibleSnoozedThreads, ...renderedSettledThreads],
-    [pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
+    () => [
+      ...visibleFolderThreads,
+      ...pinnedThreads,
+      ...activeThreads,
+      ...visibleSnoozedThreads,
+      ...renderedSettledThreads,
+    ],
+    [
+      visibleFolderThreads,
+      pinnedThreads,
+      activeThreads,
+      visibleSnoozedThreads,
+      renderedSettledThreads,
+    ],
   );
   const orderedThreadKeys = useMemo(
     () =>
@@ -2777,22 +2839,32 @@ export default function Sidebar() {
   const settledThreadKeys = useMemo(
     () =>
       new Set(
-        settledThreads.map((thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-        ),
+        scopedThreads
+          .filter(
+            (thread) =>
+              serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement ===
+                true &&
+              thread.settledOverride === "settled" &&
+              !effectiveSnoozed(thread, { now: snoozeNow }),
+          )
+          .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
       ),
-    [settledThreads],
+    [scopedThreads, serverConfigs, snoozeNow],
   );
   const settledThreadKeysRef = useRef(settledThreadKeys);
   settledThreadKeysRef.current = settledThreadKeys;
   const snoozedThreadKeys = useMemo(
     () =>
       new Set(
-        snoozedThreads.map((thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-        ),
+        scopedThreads
+          .filter(
+            (thread) =>
+              serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze ===
+                true && effectiveSnoozed(thread, { now: snoozeNow }),
+          )
+          .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
       ),
-    [snoozedThreads],
+    [scopedThreads, serverConfigs, snoozeNow],
   );
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
   snoozedThreadKeysRef.current = snoozedThreadKeys;
@@ -3165,8 +3237,29 @@ export default function Sidebar() {
     add(activeThreads, "active");
     add(snoozedThreads, "snoozed");
     add(settledThreads, "settled");
+    for (const thread of visibleFolderThreads) {
+      const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+      map.set(
+        key,
+        snoozedThreadKeys.has(key)
+          ? "snoozed"
+          : settledThreadKeys.has(key)
+            ? "settled"
+            : thread.pinnedAt != null
+              ? "pinned"
+              : "active",
+      );
+    }
     return map;
-  }, [activeThreads, pinnedThreads, settledThreads, snoozedThreads]);
+  }, [
+    activeThreads,
+    pinnedThreads,
+    settledThreads,
+    snoozedThreads,
+    visibleFolderThreads,
+    snoozedThreadKeys,
+    settledThreadKeys,
+  ]);
   const pinnedKeys = useMemo(
     () =>
       pinnedThreads.map((thread) =>
@@ -3364,13 +3457,10 @@ export default function Sidebar() {
     visibleSnoozedThreads,
   ]);
   useEffect(() => {
-    if (
-      dragState !== null &&
-      !sidebarListItems.some((item) => item.kind === "thread" && item.key === dragState.activeKey)
-    ) {
+    if (dragState !== null && !threadByKey.has(dragState.activeKey)) {
       cancelThreadDrag();
     }
-  }, [cancelThreadDrag, dragState, sidebarListItems]);
+  }, [cancelThreadDrag, dragState, threadByKey]);
   const listMotionPaused = dragState !== null;
   // Every shell event rebuilds sidebarListItems, but rows only move when the
   // rendered order or a row's section changes. Keying the motion pass on that
@@ -3464,7 +3554,7 @@ export default function Sidebar() {
   const draggedThreadKey = dragState?.activeKey;
   const draggedFromSection = dragState?.activeSection;
   const dragActivationY = dragState?.activationY;
-  const dndCollisionDetection = useMemo(() => {
+  const lifecycleCollisionDetection = useMemo(() => {
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
       return createSidebarCollisionDetection(() => true);
     const source = threadByKey.get(draggedThreadKey);
@@ -3511,9 +3601,122 @@ export default function Sidebar() {
     sidebarListItems,
     threadByKey,
   ]);
+  const otherChatDropIds = useMemo(
+    () => new Set(sidebarListItems.map(sidebarListItemId)),
+    [sidebarListItems],
+  );
+  const folderThreadIds = useMemo(
+    () =>
+      new Set(
+        visibleFolderThreads.map((thread) =>
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        ),
+      ),
+    [visibleFolderThreads],
+  );
+  const dndCollisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const source = threadByKey.get(String(args.active.id));
+      return source
+        ? detectChatFolderCollision(args, {
+            source,
+            currentFolderKey: folderKey(source),
+            folders: chatFolders.folders,
+            folderThreadIds,
+            otherChatDropIds,
+            lifecycleCollisionDetection,
+          })
+        : [];
+    },
+    [
+      threadByKey,
+      folderKey,
+      chatFolders.folders,
+      folderThreadIds,
+      otherChatDropIds,
+      lifecycleCollisionDetection,
+    ],
+  );
   const handleThreadDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeKey = String(event.active.id);
+      const source = threadByKey.get(activeKey);
+      if (source && event.over) {
+        const overId = String(event.over.id);
+        const sourceFolderKey = folderKey(source);
+        const overThread = threadByKey.get(overId);
+        if (
+          sourceFolderKey !== null &&
+          overThread !== undefined &&
+          folderKey(overThread) === sourceFolderKey
+        ) {
+          const sourceSection = sectionByThreadKey.get(activeKey);
+          const targetSection = sectionByThreadKey.get(overId);
+          if (
+            activeKey !== overId &&
+            sourceSection === targetSection &&
+            (sourceSection === "active" || sourceSection === "pinned")
+          ) {
+            const orderedIds = (threadsByFolder.get(sourceFolderKey) ?? [])
+              .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
+              .filter((threadKey) => sectionByThreadKey.get(threadKey) === sourceSection);
+            const fromIndex = orderedIds.indexOf(activeKey);
+            const toIndex = orderedIds.indexOf(overId);
+            if (fromIndex !== -1 && toIndex !== -1) {
+              const desiredOrder = arrayMove(orderedIds, fromIndex, toIndex);
+              const assignments = planPinnedReorder({
+                orderedIds: desiredOrder,
+                keysById: sourceSection === "pinned" ? pinnedKeysById : activeKeysById,
+                movedId: activeKey,
+              });
+              void (async () => {
+                for (const assignment of assignments) {
+                  const thread = threadByKey.get(assignment.id);
+                  if (thread === undefined) continue;
+                  const result = await (
+                    sourceSection === "pinned" ? reorderPinnedThread : reorderActiveThread
+                  )(scopeThreadRef(thread.environmentId, thread.id), assignment.orderKey);
+                  if (result._tag === "Success") continue;
+                  if (!isAtomCommandInterrupted(result)) {
+                    const error = squashAtomCommandFailure(result);
+                    toastManager.add(
+                      stackedThreadToast({
+                        type: "error",
+                        title: "Failed to reorder section chats",
+                        description: error instanceof Error ? error.message : "An error occurred.",
+                      }),
+                    );
+                  }
+                  break;
+                }
+              })();
+              return;
+            }
+          }
+        }
+        const destination = resolveChatFolderDrop(
+          source,
+          folderKey(source),
+          overId,
+          chatFolders.folders,
+        );
+        const returnToMainList =
+          folderKey(source) !== null &&
+          sidebarListItems.some((item) => sidebarListItemId(item) === overId);
+        if (destination || returnToMainList) {
+          const folderId = destination?.folderId ?? null;
+          void moveToFolder(source, folderId).then((saved) => {
+            if (saved && destination?.key) {
+              setCollapsedFolders((previous) => {
+                const next = new Set(previous);
+                next.delete(destination.key!);
+                return next;
+              });
+            }
+          });
+          return;
+        }
+      }
       const activeSection = sectionByThreadKey.get(activeKey);
       const target =
         event.over === null
@@ -3652,6 +3855,10 @@ export default function Sidebar() {
       })();
     },
     [
+      folderKey,
+      threadsByFolder,
+      chatFolders.folders,
+      moveToFolder,
       activeKeysById,
       pinnedKeysById,
       serverConfigs,
@@ -3808,6 +4015,7 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
+            ...folderMenuItems(selectedThreads),
             ...(unpinMenuItem ? [unpinMenuItem] : []),
             { id: "settle", label: `Settle (${count})` },
             ...(canSnoozeSelection
@@ -3833,6 +4041,23 @@ export default function Sidebar() {
         ),
       );
       if (clicked._tag === "Failure") return;
+      if (clicked.value?.startsWith("chat-folder:")) {
+        const first = selectedThreads[0];
+        if (!first) return;
+        const folderId =
+          clicked.value === "chat-folder:remove"
+            ? null
+            : clicked.value.slice("chat-folder:".length);
+        if (
+          await saveFolders(first.environmentId, {
+            chatFolderAssignments: Object.fromEntries(
+              selectedThreads.map((thread) => [thread.id, folderId]),
+            ),
+          })
+        )
+          clearSelection();
+        return;
+      }
       if (clicked.value?.startsWith("snooze:")) {
         const preset =
           clicked.value === "snooze:custom"
@@ -3988,6 +4213,8 @@ export default function Sidebar() {
       );
     },
     [
+      folderMenuItems,
+      saveFolders,
       attemptSettle,
       attemptSnooze,
       attemptUnpin,
@@ -4043,6 +4270,7 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              folderMenuItems: folderMenuItems([thread]),
               branch: thread.branch ?? null,
               isPinned,
               isSettled,
@@ -4063,6 +4291,15 @@ export default function Sidebar() {
           ),
         );
         if (clicked._tag === "Failure") return;
+        if (clicked.value?.startsWith("chat-folder:")) {
+          await moveToFolder(
+            thread,
+            clicked.value === "chat-folder:remove"
+              ? null
+              : clicked.value.slice("chat-folder:".length),
+          );
+          return;
+        }
         if (clicked.value?.startsWith("snooze:")) {
           const preset =
             clicked.value === "snooze:custom"
@@ -4241,6 +4478,8 @@ export default function Sidebar() {
       copyThreadIdToClipboard,
       deleteThread,
       handleMultiSelectContextMenu,
+      folderMenuItems,
+      moveToFolder,
       markThreadUnread,
       openProjectSettings,
       projectByKey,
@@ -4602,7 +4841,7 @@ export default function Sidebar() {
                 collisionDetection={dndCollisionDetection}
                 modifiers={[
                   restrictToVerticalAxis,
-                  restrictBelowPins,
+                  ...(chatFolders.folders.length > 0 ? [] : [restrictBelowPins]),
                   restrictToFirstScrollableAncestor,
                 ]}
                 onDragStart={handleThreadDragStart}
@@ -4740,7 +4979,10 @@ export default function Sidebar() {
                             key={threadKey}
                             id={threadKey}
                             disabled={
-                              !draggableThreadKeys.has(threadKey) || optimisticDrop !== null
+                              (!draggableThreadKeys.has(threadKey) &&
+                                serverConfigs.get(thread.environmentId)?.environment.capabilities
+                                  .chatFolders !== true) ||
+                              optimisticDrop !== null
                             }
                           >
                             {(bag) => renderThreadRowInner(thread, section, bag)}
@@ -4749,11 +4991,80 @@ export default function Sidebar() {
                       };
                       const from = dragState?.activeSection ?? null;
                       const items: ReactNode[] = [
+                        <ChatFolders
+                          key="chat-sections"
+                          folders={chatFolders}
+                          projects={
+                            scopedProjectKeys === null
+                              ? projects
+                              : projects.filter((project) =>
+                                  scopedProjectKeys.has(`${project.environmentId}:${project.id}`),
+                                )
+                          }
+                          threadsByFolder={threadsByFolder}
+                          collapsed={collapsedFolders}
+                          onToggle={toggleFolder}
+                          onNewThread={(folder) => {
+                            const key = chatFolderKey(folder.environmentId, folder.id);
+                            setCollapsedFolders((previous) => {
+                              const next = new Set(previous);
+                              next.delete(key);
+                              return next;
+                            });
+                            if (isMobile) setOpenMobile(false);
+                            void (async () => {
+                              const projectRef = scopeProjectRef(
+                                folder.environmentId,
+                                folder.projectId,
+                              );
+                              await newThreadContext.handleNewThread(projectRef, {
+                                chatFolderId: folder.id,
+                              });
+                            })();
+                          }}
+                          renderThreads={(folder, sectionThreads) => (
+                            <>
+                              <SidebarDraftBlock
+                                projectByKey={projectByKey}
+                                projectDisplayNameByKey={projectDisplayNameByKey}
+                                scopedProjectKeys={scopedProjectKeys}
+                                matchesFolder={(thread) =>
+                                  folderKey(thread) ===
+                                  chatFolderKey(folder.environmentId, folder.id)
+                                }
+                                routeDraftId={routeDraftIdForRows}
+                                onNavigateToDraft={navigateToDraft}
+                              />
+                              <SortableContext
+                                items={sectionThreads.map((thread) =>
+                                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                                )}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {sectionThreads.map((thread) => {
+                                  const threadKey = scopedThreadKey(
+                                    scopeThreadRef(thread.environmentId, thread.id),
+                                  );
+                                  const section = sectionByThreadKey.get(threadKey) ?? "active";
+                                  return (
+                                    <SectionThreadRow key={threadKey} id={threadKey}>
+                                      {(bag) => renderThreadRowInner(thread, section, bag)}
+                                    </SectionThreadRow>
+                                  );
+                                })}
+                              </SortableContext>
+                              <li className="hidden px-2.5 py-1 text-xs text-sidebar-muted-foreground only:block">
+                                Start a chat with + or move one here from its menu.
+                              </li>
+                            </>
+                          )}
+                        />,
                         <SidebarDraftBlock
                           key="draft-sessions"
                           projectByKey={projectByKey}
                           projectDisplayNameByKey={projectDisplayNameByKey}
                           scopedProjectKeys={scopedProjectKeys}
+                          matchesFolder={matchesUnassigned}
                           routeDraftId={routeDraftIdForRows}
                           onNavigateToDraft={navigateToDraft}
                         />,
@@ -4881,13 +5192,7 @@ export default function Sidebar() {
               </DndContext>
             </TooltipProvider>
           ) : null}
-          {!isSearchingThreads &&
-          visibleDraftSessionCount === 0 &&
-          pinnedThreads.length +
-            activeThreads.length +
-            snoozedThreads.length +
-            settledThreads.length ===
-            0 ? (
+          {!isSearchingThreads && visibleDraftSessionCount === 0 && scopedThreads.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 ? (
                 <>

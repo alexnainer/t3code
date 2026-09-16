@@ -1,4 +1,11 @@
-export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
+export const BUILT_IN_THEME_IDS = [
+  "t3-chat",
+  "grove",
+  "ocean",
+  "ember",
+  "iris",
+  "codex-gray",
+] as const;
 
 /** The mobile app's own hand-tuned palette, which is not part of the built-in library. */
 export const MOBILE_DEFAULT_THEME_ID = "t3-code";
@@ -756,12 +763,78 @@ export const IRIS_THEME: ThemeDefinition = {
   sidebarArtwork: true,
 };
 
+export const CODEX_GRAY_THEME: ThemeDefinition = {
+  id: "codex-gray",
+  label: "Codex gray",
+  appearance: "dark",
+  colors: {
+    canvas: "oklch(0.209036 0 0)",
+    chrome: "oklch(0.24314 0.007563 95.372)",
+    toolbar: "oklch(0.209036 0 0)",
+    toolbarForeground: "oklch(0.921906 0 0)",
+    toolbarBorder: "oklch(0.321093 0 0)",
+    toolbarControl: "oklch(0.28094 0 0)",
+    toolbarControlForeground: "oklch(0.900601 0 0)",
+    toolbarControlHover: "oklch(0.340697 0 0)",
+    surface: "oklch(0.260325 0 0)",
+    surfaceRaised: "oklch(0.285017 0 0)",
+    surfaceOverlay: "oklch(0.297163 0 0)",
+    text: "oklch(0.921906 0 0)",
+    textMuted: "oklch(0.79 0 0)",
+    border: "oklch(0.344584 0 0)",
+    input: "oklch(0.340697 0 0)",
+    focus: "oklch(0.728378 0 0)",
+    accent: "oklch(0.921906 0 0)",
+    accentForeground: "oklch(0.243535 0 0)",
+    secondary: "oklch(0.285017 0 0)",
+    secondaryForeground: "oklch(0.900601 0 0)",
+    muted: "oklch(0.28094 0 0)",
+    mutedForeground: "oklch(0.81 0 0)",
+    placeholder: "oklch(0.79 0 0)",
+    secondaryLabel: "oklch(0.81 0 0)",
+    iconMuted: "oklch(0.8 0.003 34.306)",
+    error: "oklch(0.705176 0.146003 21.472)",
+    errorForeground: "oklch(0.832543 0.092887 19.218)",
+    errorSurface: "oklch(0.34391 0.033592 18.933)",
+    warning: "oklch(0.810942 0.094226 82.892)",
+    warningForeground: "oklch(0.879326 0.077325 81.972)",
+    warningSurface: "oklch(0.363156 0.023457 82.909)",
+    update: "oklch(0.81389 0.063927 258.086)",
+    updateForeground: "oklch(0.876905 0.043915 257.972)",
+    updateSurface: "oklch(0.370236 0.034642 253.564)",
+    accentSurface: "oklch(0.33289 0 0)",
+    accentSurfaceForeground: "oklch(0.921906 0 0)",
+    messageSurface: "oklch(0.285017 0 0)",
+    messageForeground: "oklch(0.921906 0 0)",
+    messageAction: "oklch(0.921906 0 0)",
+    messageActionForeground: "oklch(0.243535 0 0)",
+    messageActionHover: "oklch(0.970151 0 0)",
+    codeBackground: "oklch(0.243535 0 0)",
+    codeForeground: "oklch(0.900601 0 0)",
+    sidebar: "oklch(0.24449 0.017353 12.315)",
+    sidebarForeground: "oklch(0.921906 0 0)",
+    sidebarMutedForeground: "oklch(0.82 0.004 36.542)",
+    sidebarControlSurface: "oklch(0.293492 0.012017 26.297)",
+    sidebarRowHover: "oklch(0.296573 0.014906 11.224)",
+    sidebarRowActive: "oklch(0.314548 0.017615 18.129)",
+    sidebarRowSelected: "oklch(0.366939 0.019866 22.897)",
+    sidebarBorder: "oklch(0.297515 0.011971 26.29)",
+    terminalBackground: "oklch(0.209036 0 0)",
+    terminalForeground: "oklch(0.900601 0 0)",
+    terminalCursor: "oklch(0.900601 0 0)",
+    terminalSelection: "oklch(0.382727 0.011554 34.301)",
+    terminalScrollbar: "oklch(0.40215 0.007542 43.228)",
+    terminalScrollbarHover: "oklch(0.506188 0.011279 41.796)",
+  },
+};
+
 export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  CODEX_GRAY_THEME,
 ];
 
 export function getThemeColorsForAppearance(

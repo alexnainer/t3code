@@ -61,3 +61,25 @@ with its configured upstream. Choose an environment to set the default or a proj
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Chat sections
+
+Use **Sections → +** in the sidebar to create a section within a project. Each
+section shows its chats underneath its heading, and multiple sections can stay
+open at once. Collapse a heading to hide just that section's chats. Chats outside
+sections remain visible below them.
+
+Drag a chat onto a section heading or its chat list to move it there. Empty and
+collapsed sections accept drops too. Drop onto **Other chats** to remove it from
+a section. Moves keep the chat in the same project and preserve its pinned,
+snoozed, or settled state.
+
+From a chat's menu, choose **Move to section**; you can also select several chats
+in the same project and move them together. Use a section's **+** to start a chat
+there. Its **…** menu lets you rename or delete it. Deleting a section keeps its
+chats and returns them to the main list.
+
+Sections organize conversations without changing their repository or worktree.
+They are saved on the connected server and available in the default web and
+desktop sidebar; the legacy sidebar and native mobile app show chats without
+section controls. Both the server and web/desktop client must support sections.

@@ -20,6 +20,9 @@ const history = isElectron ? createHashHistory() : createBrowserHistory();
 const router = getRouter(history);
 
 if (isElectron) {
+  if (window.desktopBridge?.getNativeBackdrop?.() === "mica") {
+    document.documentElement.dataset.nativeBackdrop = "mica";
+  }
   syncDocumentElectronPlatformClasses(navigator.platform);
   syncDocumentWindowControlsOverlayClass();
 }

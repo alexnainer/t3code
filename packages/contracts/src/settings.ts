@@ -6,6 +6,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
   ForwardCompatibleNullable,
   ProjectId,
+  ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
@@ -1007,7 +1008,19 @@ export const ProjectSettingsOverrides = Schema.Struct({
 } satisfies Record<ProjectScopedServerSettingKey, unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
+export const ChatFolder = Schema.Struct({
+  projectId: ProjectId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+});
+export type ChatFolder = typeof ChatFolder.Type;
+
 export const ServerSettings = Schema.Struct({
+  chatFolders: Schema.Record(TrimmedNonEmptyString, ChatFolder).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  chatFolderAssignments: Schema.Record(ThreadId, TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   // How assistant text reaches clients during a turn. Deliberately a fresh
   // key (was `enableLegacyTokenStreaming`, before that
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
@@ -1347,6 +1360,10 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  chatFolders: Schema.optionalKey(Schema.Record(TrimmedNonEmptyString, Schema.NullOr(ChatFolder))),
+  chatFolderAssignments: Schema.optionalKey(
+    Schema.Record(ThreadId, Schema.NullOr(TrimmedNonEmptyString)),
+  ),
   // Server settings
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),

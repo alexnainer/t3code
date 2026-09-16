@@ -108,6 +108,7 @@ const TranscriptMessage = Schema.Struct({
 
 const CodexTurnMetadata = Schema.Struct({
   turn_id: Schema.optional(Schema.Union([Schema.String, Schema.Null])),
+  content_item_kinds: Schema.optional(Schema.Array(Schema.String)),
 });
 
 const TranscriptRecord = Schema.Struct({
@@ -283,6 +284,12 @@ function codexTurnId(metadata: unknown): string | null {
   return decoded.value.turn_id;
 }
 
+function isSyntheticCodexContext(metadata: unknown): boolean {
+  const decoded = decodeCodexTurnMetadata(metadata);
+  const contentItemKinds = Option.isSome(decoded) ? decoded.value.content_item_kinds : undefined;
+  return contentItemKinds !== undefined && !contentItemKinds.includes("user.text");
+}
+
 /** Keep visible user and assistant text while ignoring tools, reasoning, and malformed records. */
 export function parseAgentSessionTranscript(
   input: AgentSessionTranscriptMetadata & {
@@ -356,6 +363,9 @@ function parseAgentSessionRecords(
         record.payload?.type === "message" &&
         record.payload.role === "user"
       ) {
+        if (isSyntheticCodexContext(record.payload.internal_chat_message_metadata_passthrough)) {
+          continue;
+        }
         const turnId = codexTurnId(record.payload.internal_chat_message_metadata_passthrough);
         const text = extractText(record.payload.content);
         if (turnId !== null && text.length > 0) {
@@ -469,6 +479,12 @@ function parseAgentSessionRecords(
 
     const extractedText = extractText(record.payload.content);
     if (extractedText.length === 0) continue;
+    if (
+      record.payload.role === "user" &&
+      isSyntheticCodexContext(record.payload.internal_chat_message_metadata_passthrough)
+    ) {
+      continue;
+    }
     if (record.payload.role === "user" && canonicalCodexResponseUserIndices.has(recordIndex)) {
       continue;
     }
@@ -698,7 +714,7 @@ export const make = Effect.gen(function* () {
     directory: string,
   ): Effect.fn.Return<
     | { readonly _tag: "Repository"; readonly git: AgentSessionProjectGit | null }
-    | { readonly _tag: "Worktree" }
+    | { readonly _tag: "Worktree"; readonly mainWorktreeRoot: string | null }
     | { readonly _tag: "NotGit" }
   > {
     const gitPath = path.join(directory, ".git");
@@ -712,7 +728,20 @@ export const make = Effect.gen(function* () {
       const target = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
       if (target === undefined || target.length === 0) return { _tag: "NotGit" } as const;
       gitDir = path.resolve(directory, target);
-      if (/[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(gitDir)) return { _tag: "Worktree" } as const;
+      if (/[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(gitDir)) {
+        const configuredCommonDir = (yield* fileSystem
+          .readFileString(path.join(gitDir, "commondir"))
+          .pipe(Effect.orElseSucceed(() => ""))).trim();
+        const commonGitDir = path.resolve(
+          gitDir,
+          configuredCommonDir.length > 0 ? configuredCommonDir : path.join("..", ".."),
+        );
+        return {
+          _tag: "Worktree",
+          mainWorktreeRoot:
+            path.basename(commonGitDir) === ".git" ? path.dirname(commonGitDir) : null,
+        } as const;
+      }
     }
     const configText = yield* fileSystem
       .readFileString(path.join(gitDir, "config"))
@@ -725,6 +754,45 @@ export const make = Effect.gen(function* () {
         repository: parseGitHubRepositoryNameWithOwnerFromRemoteUrl(originUrl),
       },
     } as const;
+  });
+
+  /** Resolve external linked worktrees to the main checkout that owns their history. */
+  const resolveImportProject = Effect.fn("AgentSessionScanner.resolveImportProject")(function* (
+    directory: string,
+  ) {
+    const resolved = path.resolve(directory);
+    if (isExcludedProjectPath(resolved)) return null;
+    const stats = yield* statOption(resolved);
+    if (Option.isNone(stats) || stats.value.type !== "Directory") return null;
+    const realPath = yield* fileSystem
+      .realPath(resolved)
+      .pipe(Effect.orElseSucceed(() => resolved));
+    if (isExcludedProjectPath(realPath)) return null;
+
+    const gitIdentity = yield* readGitIdentity(resolved);
+    if (gitIdentity._tag !== "Worktree") {
+      return {
+        path: resolved,
+        key: yield* directoryIdentity(resolved, stats.value),
+        git: gitIdentity._tag === "Repository" ? gitIdentity.git : null,
+      };
+    }
+
+    if (gitIdentity.mainWorktreeRoot === null) return null;
+    const mainRoot = path.resolve(gitIdentity.mainWorktreeRoot);
+    if (isExcludedProjectPath(mainRoot)) return null;
+    const mainStats = yield* statOption(mainRoot);
+    if (Option.isNone(mainStats) || mainStats.value.type !== "Directory") return null;
+    const mainRealPath = yield* fileSystem
+      .realPath(mainRoot)
+      .pipe(Effect.orElseSucceed(() => mainRoot));
+    if (isExcludedProjectPath(mainRealPath)) return null;
+    const mainGitIdentity = yield* readGitIdentity(mainRoot);
+    return {
+      path: mainRoot,
+      key: yield* directoryIdentity(mainRoot, mainStats.value),
+      git: mainGitIdentity._tag === "Repository" ? mainGitIdentity.git : null,
+    };
   });
 
   // A large history snapshot can precede session metadata. Read bounded
@@ -1214,50 +1282,34 @@ export const make = Effect.gen(function* () {
         git: AgentSessionProjectGit | null;
       }
     >();
-    const directoryKeys = new Map<string, string>();
-    const gitIdentities = new Map<string, AgentSessionProjectGit | null>();
+    const resolvedProjects = new Map<
+      string,
+      {
+        readonly path: string;
+        readonly key: string;
+        readonly git: AgentSessionProjectGit | null;
+      } | null
+    >();
 
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim());
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if (isExcludedProjectPath(resolved)) continue;
-      let key = directoryKeys.get(resolved);
-      if (key === undefined) {
-        const stats = yield* statOption(resolved);
-        // Directories that no longer exist can't be imported.
-        if (Option.isNone(stats) || stats.value.type !== "Directory") {
-          directoryKeys.set(resolved, "");
-          continue;
-        }
-        const realPath = yield* fileSystem
-          .realPath(resolved)
-          .pipe(Effect.orElseSucceed(() => resolved));
-        // A symlink can point into the worktrees directory even when its own
-        // spelling doesn't; check again with links resolved.
-        if (isExcludedProjectPath(realPath)) {
-          key = "";
-        } else {
-          const gitIdentity = yield* readGitIdentity(resolved);
-          if (gitIdentity._tag === "Worktree") {
-            key = "";
-          } else {
-            key = yield* directoryIdentity(resolved, stats.value);
-            gitIdentities.set(key, gitIdentity._tag === "Repository" ? gitIdentity.git : null);
-          }
-        }
-        directoryKeys.set(resolved, key);
+      let project = resolvedProjects.get(resolved);
+      if (project === undefined) {
+        project = yield* resolveImportProject(resolved);
+        resolvedProjects.set(resolved, project);
       }
-      if (key === "") continue;
+      if (project === null) continue;
 
-      const existing = merged.get(key);
+      const existing = merged.get(project.key);
       if (!existing) {
-        merged.set(key, {
-          path: resolved,
+        merged.set(project.key, {
+          path: project.path,
           sources: [candidate.source],
           threadCount: candidate.threadCount,
           lastActiveAtMs: candidate.lastActiveAtMs,
-          git: gitIdentities.get(key) ?? null,
+          git: project.git,
         });
         continue;
       }
@@ -1330,9 +1382,9 @@ export const make = Effect.gen(function* () {
     completedSources: ReadonlyArray<AgentSessionImportSource>,
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot));
-    const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
-    if (isExcludedProjectPath(root) || isExcludedProjectPath(realRoot)) return Stream.empty;
-    const rootIdentity = yield* directoryIdentity(root);
+    const rootProject = yield* resolveImportProject(root);
+    if (rootProject === null) return Stream.empty;
+    const rootIdentity = rootProject.key;
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const cutoffMs = nowMs - RECENT_THREAD_WINDOW_MS;
 
@@ -1347,7 +1399,8 @@ export const make = Effect.gen(function* () {
       const expanded = expandHomePath(candidate.cwd.trim());
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if ((yield* directoryIdentity(resolved)) !== rootIdentity) continue;
+      const candidateProject = yield* resolveImportProject(resolved);
+      if (candidateProject === null || candidateProject.key !== rootIdentity) continue;
 
       for (const transcript of candidate.transcripts) {
         if (
@@ -1441,10 +1494,11 @@ export const make = Effect.gen(function* () {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
           const expandedCwd = expandHomePath(snapshotCwd.trim());
-          if (
-            !path.isAbsolute(expandedCwd) ||
-            (yield* directoryIdentity(path.resolve(expandedCwd))) !== rootIdentity
-          ) {
+          if (!path.isAbsolute(expandedCwd)) {
+            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+          }
+          const snapshotProject = yield* resolveImportProject(path.resolve(expandedCwd));
+          if (snapshotProject === null || snapshotProject.key !== rootIdentity) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
 

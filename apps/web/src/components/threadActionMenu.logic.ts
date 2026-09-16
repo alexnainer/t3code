@@ -1,3 +1,4 @@
+import type { ChatFolderMenuId } from "../chatFolders";
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
@@ -7,6 +8,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  * remains data-driven.
  */
 export type ThreadActionMenuId =
+  | ChatFolderMenuId
   | "new-thread-on-branch"
   | "project-settings"
   | "pin"
@@ -27,6 +29,7 @@ export type ThreadActionMenuId =
   | "delete";
 
 export interface ThreadActionMenuState {
+  readonly folderMenuItems?: ReadonlyArray<ContextMenuItem<ChatFolderMenuId>>;
   readonly branch: string | null;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
@@ -53,6 +56,7 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    ...(state.folderMenuItems ?? []),
     ...(state.branch
       ? [
           {

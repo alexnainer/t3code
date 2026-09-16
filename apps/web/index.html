@@ -51,6 +51,14 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
+          "codex-gray": {
+            dark: {
+              background: "oklch(0.209036 0 0)",
+              foreground: "oklch(0.921906 0 0)",
+              accent: "oklch(0.921906 0 0)",
+              chrome: "oklch(0.24314 0.007563 95.372)",
+            },
+          },
           "t3-chat": {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
@@ -135,6 +143,7 @@
           "light",
           "dark",
           "t3-chat",
+          "codex-gray",
           "grove",
           "ocean",
           "ember",
@@ -250,7 +259,9 @@
             themeModes !== null;
           const theme = isKnownTheme && storedTheme ? storedTheme : "system";
           const isThemed = isKnownTheme && themeModes !== null;
-          const baseAppearance = customTheme ? customTheme.appearance : "light";
+          const baseAppearance = customTheme
+            ? customTheme.appearance
+            : (builtInModes?.[0] ?? "light");
           const systemMode = prefersDark ? "dark" : "light";
           const storedAppearanceMode = window.localStorage.getItem(
             THEME_APPEARANCE_MODE_STORAGE_KEY,

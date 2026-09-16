@@ -271,6 +271,8 @@ export function applyServerSettingsPatch(
     backgroundActivityProfile,
     backgroundActivity,
     // Merged per entry below; its `null` removals must not reach deepMerge.
+    chatFolders: chatFoldersPatch,
+    chatFolderAssignments: chatFolderAssignmentsPatch,
     usageLimitSources: usageLimitSourcesPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
@@ -317,9 +319,17 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
+  const chatFolders = mergeSettingsEntries(current.chatFolders, chatFoldersPatch ?? {});
+  const chatFolderAssignments = Object.fromEntries(
+    Object.entries(
+      mergeSettingsEntries(current.chatFolderAssignments, chatFolderAssignmentsPatch ?? {}),
+    ).filter(([, folderId]) => Object.hasOwn(chatFolders, folderId)),
+  );
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
+    chatFolders,
+    chatFolderAssignments,
     ...(backgroundActivity !== undefined
       ? {
           backgroundActivity: {

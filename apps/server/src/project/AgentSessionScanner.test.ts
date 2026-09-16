@@ -912,7 +912,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("skips linked git worktrees and reports the origin of real checkouts", () =>
+    it.effect("maps linked git worktrees to their main checkout", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const fileSystem = yield* FileSystem.FileSystem;
@@ -958,17 +958,27 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const result = yield* runScan({ claudeHomePath, codexHomePath });
 
         expect(
-          result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
+          result.candidates.map((candidate) => ({
+            path: candidate.path,
+            git: candidate.git,
+            threadCount: candidate.threadCount,
+          })),
         ).toEqual([
           {
             path: submodule,
             git: { remoteKey: "github.com/pingdotgg/vendor", repository: "pingdotgg/vendor" },
+            threadCount: 1,
           },
-          { path: noRemote, git: { remoteKey: null, repository: null } },
-          { path: plain, git: null },
+          {
+            path: noRemote,
+            git: { remoteKey: null, repository: null },
+            threadCount: 1,
+          },
+          { path: plain, git: null, threadCount: 1 },
           {
             path: repo,
             git: { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" },
+            threadCount: 2,
           },
         ]);
       }),
@@ -2431,6 +2441,61 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    it.effect("imports sessions from an external linked worktree into its main checkout", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const repo = yield* makeTempDir("t3code-workspace-repo-");
+        const worktree = yield* makeTempDir("t3code-workspace-worktree-");
+
+        yield* fileSystem.makeDirectory(path.join(repo, ".git"));
+        yield* fileSystem.writeFileString(path.join(repo, ".git", "config"), "[core]\n");
+        yield* fileSystem.writeFileString(
+          path.join(worktree, ".git"),
+          `gitdir: ${path.join(repo, ".git", "worktrees", "wt")}\n`,
+        );
+
+        yield* writeTranscript({
+          filePath: path.join(
+            codexHomePath,
+            "sessions",
+            "2026",
+            "08",
+            "24",
+            "rollout-linked-worktree.jsonl",
+          ),
+          contents: [
+            encodeTranscriptRecord({
+              type: "session_meta",
+              payload: { id: "linked-worktree-session", cwd: worktree },
+            }),
+            encodeTranscriptRecord({
+              type: "event_msg",
+              payload: { type: "user_message", message: "Import this linked worktree session" },
+            }),
+          ].join("\n"),
+          mtimeMs: nowMs,
+        });
+
+        const threads = yield* runRecentThreads({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: repo,
+        });
+
+        expect(threads.map((thread) => thread.providerSessionId)).toEqual([
+          "linked-worktree-session",
+        ]);
+        expect(threads[0]?.messages.map((message) => message.text)).toEqual([
+          "Import this linked worktree session",
+        ]);
+      }),
+    );
+
     it.effect("uses one deterministic provider instance for a shared session home", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
@@ -2699,6 +2764,23 @@ describe("parseAgentSessionTranscript", () => {
           payload: {
             type: "message",
             role: "user",
+            internal_chat_message_metadata_passthrough: {
+              turn_id: "setup",
+              content_item_kinds: ["plugins.recommendations", "agents_md.instructions"],
+            },
+            content: [
+              {
+                type: "input_text",
+                text: "<recommended_plugins>\nSynthetic plugin list\n</recommended_plugins>",
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
             internal_chat_message_metadata_passthrough: { turn_id: "turn-1" },
             content: [
               {
@@ -2740,6 +2822,7 @@ describe("parseAgentSessionTranscript", () => {
       "Fix the actual bug",
       "Fixed",
     ]);
+    expect(thread?.title).toBe("Fix the actual bug");
   });
 
   it("keeps the canonical first prompt after long Codex transcripts are capped", () => {

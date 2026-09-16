@@ -21,9 +21,9 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
 describe("ServerSettings default permissions", () => {
-  it("keeps full access for settings saved before a default was configured", () => {
-    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("full-access");
-    expect(DEFAULT_SERVER_SETTINGS.defaultRuntimeMode).toBe("full-access");
+  it("defaults older settings to auto mode", () => {
+    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("auto");
+    expect(DEFAULT_SERVER_SETTINGS.defaultRuntimeMode).toBe("auto");
   });
 
   it.each(["approval-required", "auto-accept-edits", "auto", "full-access"])(

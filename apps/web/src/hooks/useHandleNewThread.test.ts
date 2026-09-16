@@ -16,6 +16,11 @@ const testState = vi.hoisted(() => {
     readonly promotedTo: null;
     readonly threadId: string;
   } | null = null;
+  const folder = {
+    folders: [] as { environmentId: string; projectId: string; id: string }[],
+    folderKey: vi.fn((): string | null => null),
+    move: vi.fn(async () => true),
+  };
   const router = {
     state: {
       location: { href: "/" },
@@ -37,6 +42,7 @@ const testState = vi.hoisted(() => {
   };
 
   return {
+    folder,
     completeProjectFileRead: (value: null) => completeProjectFileRead(value),
     draftStore,
     get projectFileRead() {
@@ -52,6 +58,10 @@ const testState = vi.hoisted(() => {
         startFromOrigin: false,
       },
     ) {
+      folder.folders = [];
+      folder.folderKey.mockReset();
+      folder.folderKey.mockReturnValue(null);
+      folder.move.mockClear();
       storedDraft = nextStoredDraft;
       targetSettings = {
         defaultThreadEnvMode: workspaceDefaults.envMode,
@@ -173,6 +183,8 @@ vi.mock("../uiStateStore", () => ({
 }));
 vi.mock("./useSettings", () => ({ useClientSettings: () => ({}) }));
 
+vi.mock("./useChatFolders", () => ({ useChatFolders: () => testState.folder }));
+
 import { useNewThreadHandler } from "./useHandleNewThread";
 
 describe.each([
@@ -279,4 +291,61 @@ describe.each([
       );
     },
   );
+});
+
+describe("new chat section assignment", () => {
+  it("assigns the resulting draft id only to an explicitly requested section in the target project", async () => {
+    testState.reset(null);
+    testState.folder.folders = [
+      {
+        environmentId: "environment-ssh",
+        projectId: "project-remote",
+        id: "reviews",
+      },
+    ];
+    const projectRef = { environmentId: "environment-ssh", projectId: "project-remote" };
+    const opening = useNewThreadHandler()(projectRef as never, { chatFolderId: "reviews" });
+    testState.completeProjectFileRead(null);
+    const opened = await opening;
+    expect(testState.folder.move).toHaveBeenCalledWith(
+      { ...projectRef, id: opened!.threadId },
+      "reviews",
+    );
+  });
+
+  it.each([
+    { environmentId: "other-environment", projectId: "project-remote" },
+    { environmentId: "environment-ssh", projectId: "other-project" },
+  ])(
+    "does not assign chats to a folder outside the target $environmentId/$projectId",
+    async (target) => {
+      testState.reset(null);
+      testState.folder.folders = [{ ...target, id: "reviews" }];
+      const opening = useNewThreadHandler()(
+        {
+          environmentId: "environment-ssh",
+          projectId: "project-remote",
+        } as never,
+        { chatFolderId: "reviews" },
+      );
+      testState.completeProjectFileRead(null);
+      expect(await opening).toBeNull();
+      expect(testState.folder.move).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it("clears a reused empty draft's section when starting a chat outside sections", async () => {
+  testState.reset({
+    draftId: "draft-existing",
+    environmentId: "environment-ssh",
+    promotedTo: null,
+    threadId: "thread-existing",
+  });
+  testState.folder.folderKey.mockReturnValue("old-section");
+  const projectRef = { environmentId: "environment-ssh", projectId: "project-remote" };
+  const opening = useNewThreadHandler()(projectRef as never);
+  testState.completeProjectFileRead(null);
+  const opened = await opening;
+  expect(testState.folder.move).toHaveBeenCalledWith({ ...projectRef, id: opened!.threadId }, null);
 });

@@ -1,3 +1,4 @@
+import { useChatFolders } from "./useChatFolders";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -69,6 +70,7 @@ export function useThreadActionMenu(input: {
 }) {
   const { threadRef, projectCwd, onStartRename } = input;
   const router = useRouter();
+  const { menuItems: folderMenuItems, move: moveToFolder } = useChatFolders();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -139,6 +141,7 @@ export function useThreadActionMenu(input: {
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
+          folderMenuItems: folderMenuItems([thread]),
           branch: thread.branch ?? null,
           isPinned: thread.pinnedAt != null,
           isSettled: supports.settlement && thread.settledOverride === "settled",
@@ -152,6 +155,13 @@ export function useThreadActionMenu(input: {
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
+        if (action.startsWith("chat-folder:")) {
+          await moveToFolder(
+            thread,
+            action === "chat-folder:remove" ? null : action.slice("chat-folder:".length),
+          );
+          return;
+        }
         if (action.startsWith("snooze:")) {
           const preset =
             action === "snooze:custom"
@@ -334,6 +344,8 @@ export function useThreadActionMenu(input: {
     },
     [
       archiveThread,
+      folderMenuItems,
+      moveToFolder,
       confirmThreadArchive,
       confirmThreadDelete,
       confirmAndUnpinThread,

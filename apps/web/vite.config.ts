@@ -13,6 +13,7 @@ import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
+import { resolveDesktopRemoteCorsHeaders } from "./vite/desktopRemoteCors";
 import { tailwindPlugins } from "./vite/tailwind";
 
 const repoEnv = loadRepoEnv();
@@ -143,6 +144,36 @@ function devCompressionPlugin(): Plugin {
   };
 }
 
+// A packaged desktop can pair directly with this dev server through an SSH
+// tunnel. Chromium preflights that private-network request before the proxy
+// sees it, so narrowly allow the two registered desktop application origins.
+function desktopRemoteCorsPlugin(): Plugin {
+  return {
+    name: "t3code:desktop-remote-cors",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const origin = request.headers.origin;
+        const privateNetworkRequest = request.headers["access-control-request-private-network"];
+        const headers = resolveDesktopRemoteCorsHeaders({
+          origin: typeof origin === "string" ? origin : undefined,
+          privateNetworkRequest:
+            typeof privateNetworkRequest === "string" ? privateNetworkRequest : undefined,
+        });
+        for (const [name, value] of Object.entries(headers)) {
+          response.setHeader(name, value);
+        }
+        if (request.method === "OPTIONS" && Object.keys(headers).length > 0) {
+          response.statusCode = 204;
+          response.end();
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
+
 // Vite rejects requests whose Host header isn't localhost, which blocks sharing
 // a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
 // the DNS is controlled by tailscale, so they can't be rebound by an attacker.
@@ -157,6 +188,7 @@ export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      desktopRemoteCorsPlugin(),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",
@@ -229,6 +261,18 @@ export default defineConfig(() => {
       port,
       strictPort: true,
       allowedHosts,
+      // Vite's built-in CORS middleware runs before configureServer hooks.
+      // Let approved desktop preflights continue to our PNA-aware middleware
+      // while preserving Vite's normal loopback-origin development behavior.
+      cors: {
+        origin: [
+          /^https?:\/\/(?:(?:[^:]+\.)?localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/,
+          "t3code://app",
+          "t3code-dev://app",
+        ],
+        credentials: true,
+        preflightContinue: true,
+      },
       // Transform the whole module graph at server start instead of on the
       // first request. Without this, a cold worktree discovers and transforms
       // modules one import-level at a time while the browser waits — which

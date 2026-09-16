@@ -1,3 +1,4 @@
+import { useChatFolders } from "./useChatFolders";
 import { useAtomValue } from "@effect/atom-react";
 import {
   scopedProjectKey,
@@ -55,7 +56,7 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
-export function useNewThreadHandler() {
+function useNewThreadHandlerWithoutFolder() {
   const environmentServerConfigs = useAtomValue(environmentServerConfigsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const router = useRouter();
@@ -436,6 +437,35 @@ export function useNewThreadHandler() {
       })();
     },
     [environmentServerConfigs, getCurrentRouteTarget, projectGroupingSettings, router],
+  );
+}
+
+export function useNewThreadHandler() {
+  const createThread = useNewThreadHandlerWithoutFolder();
+  const { folders, folderKey, move } = useChatFolders();
+  return useCallback(
+    async (
+      projectRef: Parameters<typeof createThread>[0],
+      options?: Parameters<typeof createThread>[1] & { chatFolderId?: string },
+    ) => {
+      const folder =
+        options?.chatFolderId === undefined
+          ? null
+          : folders.find(
+              (candidate) =>
+                candidate.id === options.chatFolderId &&
+                candidate.environmentId === projectRef.environmentId &&
+                candidate.projectId === projectRef.projectId,
+            );
+      if (options?.chatFolderId !== undefined && !folder) return null;
+      const result = await createThread(projectRef, options);
+      if (result) {
+        const thread = { ...projectRef, id: result.threadId };
+        if (folder || folderKey(thread) !== null) await move(thread, folder?.id ?? null);
+      }
+      return result;
+    },
+    [createThread, folders, folderKey, move],
   );
 }
 

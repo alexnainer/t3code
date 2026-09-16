@@ -1,18 +1,18 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
+
 import indexHtml from "../index.html?raw";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
   getDefaultThemeColors,
   getThemeColorsForMode,
+  getThemeModes,
   invalidateCustomThemes,
   isKnownThemePreference,
   resolveThemeAppearance,
   T3_CHAT_THEME,
-  EMBER_THEME,
   GROVE_THEME,
-  IRIS_THEME,
-  OCEAN_THEME,
   THEME_APPEARANCE_MODE_STORAGE_KEY,
   THEME_FOLLOW_SYSTEM_STORAGE_KEY,
   toCanonicalThemeColor,
@@ -185,6 +185,16 @@ describe("index.html boot script", () => {
       prefersDark: true,
     },
     {
+      name: "Codex gray starts dark on a light OS",
+      storage: { [THEME_STORAGE_KEY]: "codex-gray" },
+      prefersDark: false,
+    },
+    {
+      name: "Codex gray stays dark when following a light OS",
+      storage: { [THEME_STORAGE_KEY]: "codex-gray", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: false,
+    },
+    {
       name: "Iris follows a dark OS",
       storage: { [THEME_STORAGE_KEY]: "iris", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
@@ -342,10 +352,8 @@ describe("index.html boot script", () => {
   // boot script's hand-maintained copy into a CI-enforced contract: any
   // palette change breaks this test until the copy in index.html is updated.
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
-      // The boot script resolves every built-in from a light base appearance.
-      expect(theme.appearance).toBe("light");
-      for (const mode of ["light", "dark"] as const) {
+    for (const theme of BUILT_IN_THEMES) {
+      for (const mode of getThemeModes(theme)) {
         const colors = getThemeColorsForMode(theme, mode);
         expect(colors).not.toBeNull();
         const boot = runBootScript({

@@ -3,6 +3,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
+  ThreadId,
   ProjectScript,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -1390,5 +1391,30 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       // The user's file is still there to repair; nothing was written over it.
       assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), broken);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect(
+    "persists chat folders and removes their assignments without changing other settings",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const projectId = ProjectId.make("folder-project");
+        const created = yield* service.updateSettings({
+          chatFolders: { reviews: { projectId, name: "Reviews" } },
+          chatFolderAssignments: { [ThreadId.make("folder-thread")]: "reviews" },
+        });
+        const persisted = yield* fileSystem
+          .readFileString(config.settingsPath)
+          .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))));
+        assert.deepEqual(persisted.chatFolders, created.chatFolders);
+        assert.deepEqual(persisted.chatFolderAssignments, created.chatFolderAssignments);
+        yield* service.updateSettings({ chatFolders: { reviews: null } });
+        const reloaded = yield* service.getSettings;
+        assert.deepEqual(reloaded.chatFolders, {});
+        assert.deepEqual(reloaded.chatFolderAssignments, {});
+        assert.deepEqual(reloaded.providerInstances, created.providerInstances);
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });

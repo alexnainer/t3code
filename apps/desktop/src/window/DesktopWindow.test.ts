@@ -15,7 +15,13 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as Electron from "electron";
 import * as NodeEvents from "node:events";
+import * as NodeOS from "node:os";
 import { vi } from "vite-plus/test";
+
+vi.mock("node:os", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:os")>()),
+  release: vi.fn(() => "10.0.22621"),
+}));
 
 vi.mock("electron", async (importOriginal) => ({
   ...(await importOriginal<typeof import("electron")>()),
@@ -214,6 +220,7 @@ function makeTestLayer(input: {
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
   readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
+  readonly platform?: NodeJS.Platform;
   readonly desktopSettings?: DesktopAppSettings.DesktopSettings;
   readonly mainWindowBoundsUpdates?: DesktopAppSettings.DesktopWindowBounds[];
   readonly mainWindowMaximizedUpdates?: boolean[];
@@ -285,7 +292,15 @@ function makeTestLayer(input: {
     Layer.provide(
       Layer.mergeAll(
         desktopAssetsLayer,
-        desktopEnvironmentLayer,
+        input.platform
+          ? Layer.effect(
+              DesktopEnvironment.DesktopEnvironment,
+              Effect.map(DesktopEnvironment.DesktopEnvironment, (environment) => ({
+                ...environment,
+                platform: input.platform ?? environment.platform,
+              })),
+            ).pipe(Layer.provide(desktopEnvironmentLayer))
+          : desktopEnvironmentLayer,
         desktopAppSettingsLayer,
         desktopClientSettingsLayer,
         desktopServerExposureLayer,
@@ -541,6 +556,44 @@ describe("DesktopWindow", () => {
         }
       }).pipe(Effect.provide(layer));
     }),
+  );
+
+  it.effect(
+    "keeps Mica transparent across appearance updates and falls back on older Windows",
+    () =>
+      Effect.gen(function* () {
+        for (const [release, expectedMaterial] of [
+          ["10.0.22621", "mica"],
+          ["10.0.19045", undefined],
+        ] as const) {
+          vi.mocked(NodeOS.release).mockReturnValue(release);
+          const fakeWindow = makeFakeBrowserWindow();
+          const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
+          const layer = makeTestLayer({
+            window: fakeWindow.window,
+            createCount: yield* Ref.make(0),
+            mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
+            createdWindowOptions,
+            platform: "win32",
+          });
+          yield* Effect.gen(function* () {
+            const desktopWindow = yield* DesktopWindow.DesktopWindow;
+            yield* desktopWindow.createMain;
+            const options = createdWindowOptions[0]!;
+            assert.equal(options.backgroundMaterial, expectedMaterial);
+            assert.equal(options.backgroundColor === "#00000000", expectedMaterial === "mica");
+            assert.equal(
+              options.webPreferences?.additionalArguments?.includes("--t3-native-mica") ?? false,
+              expectedMaterial === "mica",
+            );
+            yield* desktopWindow.syncAppearance;
+            assert.equal(
+              vi.mocked(fakeWindow.window.setBackgroundColor).mock.calls.at(-1)?.[0],
+              options.backgroundColor,
+            );
+          }).pipe(Effect.provide(layer));
+        }
+      }),
   );
 
   it("leaves fullscreen before concealing a pending quit", () => {
