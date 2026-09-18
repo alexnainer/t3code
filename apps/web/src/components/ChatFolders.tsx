@@ -191,7 +191,7 @@ export function ChatFolders({
                 </Button>
               </div>
               {expanded ? (
-                <ul className="ml-2 flex flex-col gap-px border-l border-sidebar-border pl-1">
+                <ul className="flex flex-col gap-px">
                   {renderThreads(folder, threads)}
                 </ul>
               ) : null}
