@@ -30,10 +30,12 @@ type Folder = Folders["folders"][number];
 function SectionDropTarget({
   id,
   label,
+  flushBottom = false,
   children,
 }: {
   id: string;
   label: string;
+  flushBottom?: boolean;
   children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -42,7 +44,11 @@ function SectionDropTarget({
       ref={setNodeRef}
       aria-label={label}
       data-thread-selection-safe
-      className={cn("mb-2 rounded-md", isOver && "bg-primary/5 ring-1 ring-primary/40")}
+      className={cn(
+        flushBottom ? "mb-0" : "mb-2",
+        "rounded-md",
+        isOver && "bg-primary/5 ring-1 ring-primary/40",
+      )}
     >
       {children}
     </section>
@@ -106,7 +112,7 @@ export function ChatFolders({
     }
   };
   return (
-    <li className="mb-2 list-none">
+    <li className="list-none">
       <section aria-label="Chat sections">
         <div className="flex h-8 items-center justify-between px-2">
           <span className="text-xs font-medium text-sidebar-muted-foreground">Sections</span>
@@ -199,7 +205,7 @@ export function ChatFolders({
           );
         })}
         {visibleFolders.length > 0 ? (
-          <SectionDropTarget id={OTHER_CHATS_DROP_ID} label="Other chats">
+          <SectionDropTarget id={OTHER_CHATS_DROP_ID} label="Other chats" flushBottom>
             <div className="px-2 py-2 text-xs font-medium text-sidebar-muted-foreground">
               Other chats
             </div>
