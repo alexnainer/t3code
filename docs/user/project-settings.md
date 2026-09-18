@@ -72,7 +72,7 @@ sections remain visible below them.
 Drag a chat onto a section heading or its chat list to move it there. Empty and
 collapsed sections accept drops too. Drop onto **Other chats** to remove it from
 a section. Moves keep the chat in the same project and preserve its pinned,
-snoozed, or settled state.
+snoozed, or archived state.
 
 From a chat's menu, choose **Move to section**; you can also select several chats
 in the same project and move them together. Use a section's **+** to start a chat

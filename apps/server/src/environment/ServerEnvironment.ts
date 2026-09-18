@@ -220,8 +220,11 @@ export const make = Effect.gen(function* () {
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       inlineMessageContext: true,
-      threadSettlement: true,
-      threadAutoSettlement: true,
+      // This fork uses Codex's single finished-work lifecycle: Archive.
+      // Keep the settlement commands and stored fields readable for upstream
+      // compatibility, but do not expose settlement as a client feature.
+      threadSettlement: false,
+      threadAutoSettlement: false,
       threadRestartContinuation: true,
       projectSettingsOverrides: true,
       threadSnooze: true,
