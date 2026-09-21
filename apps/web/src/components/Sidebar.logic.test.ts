@@ -242,6 +242,42 @@ describe("archiveSelectedThreadEntries", () => {
       followupFailures: [failure],
     });
   });
+
+  it("archives a mixed-environment selection without confusing equal thread ids", async () => {
+    const selected = [
+      { threadKey: "linux:same-id", threadRef: { environmentId: "linux", threadId: "same-id" } },
+      {
+        threadKey: "windows:same-id",
+        threadRef: { environmentId: "windows", threadId: "same-id" },
+      },
+    ];
+    const archivedRefs: (typeof selected)[number]["threadRef"][] = [];
+    const outcome = await archiveSelectedThreadEntries({
+      entries: selected,
+      archive: async ({ threadRef }, onArchived) => {
+        archivedRefs.push(threadRef);
+        onArchived();
+        return success;
+      },
+    });
+    expect(archivedRefs).toEqual(selected.map((entry) => entry.threadRef));
+    expect(outcome.archivedThreadKeys).toEqual(["linux:same-id", "windows:same-id"]);
+  });
+
+  it("keeps failed and unattempted rows selected after a partial archive", async () => {
+    const selectedKeys = new Set<string>(entries.map((entry) => entry.threadKey));
+    const outcome = await archiveSelectedThreadEntries({
+      entries,
+      archive: async (entry, onArchived) => {
+        if (entry.threadKey === "two") return failure;
+        onArchived();
+        return success;
+      },
+    });
+    for (const key of outcome.archivedThreadKeys)
+      selectedKeys.delete(key);
+    expect([...selectedKeys]).toEqual(["two", "three"]);
+  });
 });
 
 describe("buildBulkUnpinContextMenuItem", () => {
