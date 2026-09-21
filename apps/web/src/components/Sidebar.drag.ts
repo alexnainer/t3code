@@ -11,6 +11,17 @@ import {
 
 const stationary = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
 const hidden = { ...stationary, scaleY: 0 };
+
+/** Anchor the insertion line to a neighbor, never to the moving row itself. */
+export function resolveSidebarInsertionMarker(order: readonly string[], activeKey: string) {
+  const index = order.indexOf(activeKey);
+  if (index < 0) return null;
+  const next = order[index + 1];
+  if (next !== undefined) return { key: next, edge: "before" as const };
+  const previous = order[index - 1];
+  return previous === undefined ? null : { key: previous, edge: "after" as const };
+}
+
 type ThreadItem = Extract<SidebarListItem, { kind: "thread" }>;
 type Layout = Parameters<SortingStrategy>[0];
 

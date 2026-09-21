@@ -209,6 +209,7 @@ import {
   createSidebarCollisionDetection,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
+  resolveSidebarInsertionMarker,
 } from "./Sidebar.drag";
 import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
@@ -1025,6 +1026,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // sortable bag applied to the row root so the whole row drags (the
   // pointer sensor's distance constraint keeps plain clicks working).
   sortable?: SortableThreadRowBag | undefined;
+  insertionEdge?: "before" | "after" | undefined;
   dropVerb: SidebarDropVerb | null;
   // While dragging, the pin marker stays only for a pinned thread still over
   // the pinned section. Any other position shows the verb badge instead, and
@@ -1659,10 +1661,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         {...(fileDropHandlers ?? {})}
         className={cn(
           // Matches the h-8 row so unrendered rows never shift the list when they paint.
-          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
+          "relative list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
           sortable?.isDragging && "relative z-20",
         )}
       >
+        {props.insertionEdge ? <SidebarInsertionLine edge={props.insertionEdge} /> : null}
         <Tooltip disabled={sortable?.isDragging}>
           <TooltipTrigger
             render={
@@ -1801,10 +1804,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        "list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
+        "relative list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
+      {props.insertionEdge ? <SidebarInsertionLine edge={props.insertionEdge} /> : null}
       <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
           render={
@@ -1981,6 +1985,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     </li>
   );
 });
+
+function SidebarInsertionLine({ edge }: { edge: "before" | "after" }) {
+  return (
+    <span
+      aria-hidden
+      data-sidebar-insertion-line
+      className={cn(
+        "pointer-events-none absolute inset-x-2 z-30 h-0.5 rounded-full bg-primary",
+        edge === "before" ? "top-0" : "bottom-0",
+      )}
+    />
+  );
+}
 
 const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   thread: SidebarThreadSummary;
@@ -3194,6 +3211,7 @@ export default function Sidebar() {
     readonly occurredAt: string;
     readonly activationY: number | null;
     readonly targetSection: SidebarSection | null;
+    readonly overId: string | null;
   } | null>(null);
   const dragTargetSection = dragState?.targetSection ?? null;
   const dragSensorRef = useRef<SidebarPointerSensor | null>(null);
@@ -3396,6 +3414,7 @@ export default function Sidebar() {
         activeKey,
         activeSection,
         targetSection: activeSection,
+        overId: null,
         occurredAt: new Date().toISOString(),
         activationY:
           event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
@@ -3489,7 +3508,11 @@ export default function Sidebar() {
       setDragState((current) =>
         current === null || current.activeKey !== String(event.active.id)
           ? current
-          : { ...current, targetSection: target?.section ?? null },
+          : {
+              ...current,
+              targetSection: target?.section ?? null,
+              overId: event.over ? String(event.over.id) : null,
+            },
       );
     },
     [sidebarListItems],
@@ -3561,7 +3584,9 @@ export default function Sidebar() {
             activeKey: draggedThreadKey,
             activeSection: draggedFromSection,
             activePinned: source.pinnedAt != null,
-            activeSettled: source.settledOverride === "settled",
+            activeSettled:
+              serverConfigs.get(source.environmentId)?.environment.capabilities.threadSettlement ===
+                true && source.settledOverride === "settled",
             supportsSettlement:
               serverConfigs.get(source.environmentId)?.environment.capabilities.threadSettlement ===
               true,
@@ -3630,6 +3655,79 @@ export default function Sidebar() {
       lifecycleCollisionDetection,
     ],
   );
+  const planMainThreadDrop = useCallback(
+    (activeKey: string, overId: string) => {
+      const activeSection = sectionByThreadKey.get(activeKey);
+      const activeThread = threadByKey.get(activeKey);
+      const target = resolveSidebarDropTarget(sidebarListItems, activeKey, overId);
+      if (activeSection === undefined || activeThread === undefined || target === null) return null;
+      const supportsSettlement =
+        serverConfigs.get(activeThread.environmentId)?.environment.capabilities.threadSettlement ===
+        true;
+      return {
+        target,
+        activeSection,
+        activeThread,
+        plan: planSidebarThreadDrop({
+          activeKey,
+          activeSection,
+          activePinned: activeThread.pinnedAt != null,
+          activeSettled: supportsSettlement && activeThread.settledOverride === "settled",
+          supportsSettlement,
+          target,
+          pinnedOrder: pinnedKeys,
+          pinnedKeysById,
+          reorderableKeys: draggableThreadKeys,
+          activeOrder: activeKeys,
+          activeKeysById,
+          activeReorderableKeys: activeReorderableThreadKeys,
+        }),
+      };
+    },
+    [
+      sectionByThreadKey,
+      threadByKey,
+      sidebarListItems,
+      serverConfigs,
+      pinnedKeys,
+      pinnedKeysById,
+      draggableThreadKeys,
+      activeKeys,
+      activeKeysById,
+      activeReorderableThreadKeys,
+    ],
+  );
+  const insertionMarker = useMemo(() => {
+    if (dragState === null || dragState.overId === null || dragState.activeKey === dragState.overId)
+      return null;
+    const { activeKey, overId } = dragState;
+    const source = threadByKey.get(activeKey);
+    const overThread = threadByKey.get(overId);
+    if (source === undefined) return null;
+    const sourceFolder = folderKey(source);
+    if (sourceFolder !== null) {
+      const section = sectionByThreadKey.get(activeKey);
+      if (
+        overThread === undefined ||
+        folderKey(overThread) !== sourceFolder ||
+        sectionByThreadKey.get(overId) !== section ||
+        (section !== "active" && section !== "pinned")
+      )
+        return null;
+      const order = (threadsByFolder.get(sourceFolder) ?? [])
+        .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
+        .filter((key) => sectionByThreadKey.get(key) === section);
+      const from = order.indexOf(activeKey);
+      const to = order.indexOf(overId);
+      return from < 0 || to < 0
+        ? null
+        : resolveSidebarInsertionMarker(arrayMove(order, from, to), activeKey);
+    }
+    const drop = planMainThreadDrop(activeKey, overId);
+    if (!drop || drop.plan.kind === "none" || drop.plan.kind === "settle") return null;
+    return resolveSidebarInsertionMarker(drop.plan.order, activeKey);
+  }, [dragState, threadByKey, folderKey, sectionByThreadKey, threadsByFolder, planMainThreadDrop]);
+
   const handleThreadDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeKey = String(event.active.id);
@@ -3710,30 +3808,11 @@ export default function Sidebar() {
           return;
         }
       }
-      const activeSection = sectionByThreadKey.get(activeKey);
-      const target =
-        event.over === null
-          ? null
-          : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
-      const activeThread = threadByKey.get(activeKey);
-      if (activeSection === undefined || target === null || activeThread === undefined) return;
+      const dropPlan =
+        event.over === null ? null : planMainThreadDrop(activeKey, String(event.over.id));
+      if (dropPlan === null) return;
+      const { activeSection, target, activeThread, plan } = dropPlan;
       const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
-      const plan = planSidebarThreadDrop({
-        activeKey,
-        activeSection,
-        activePinned: activeThread.pinnedAt != null,
-        activeSettled: activeThread.settledOverride === "settled",
-        supportsSettlement:
-          serverConfigs.get(activeThread.environmentId)?.environment.capabilities
-            .threadSettlement === true,
-        target,
-        pinnedOrder: pinnedKeys,
-        pinnedKeysById,
-        reorderableKeys: draggableThreadKeys,
-        activeOrder: activeKeys,
-        activeKeysById,
-        activeReorderableKeys: activeReorderableThreadKeys,
-      });
       if (plan.kind === "none") return;
       if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
       const assignments =
@@ -3850,16 +3929,12 @@ export default function Sidebar() {
     [
       folderKey,
       threadsByFolder,
+      planMainThreadDrop,
       chatFolders.folders,
       moveToFolder,
       activeKeysById,
       pinnedKeysById,
-      serverConfigs,
-      activeKeys,
-      activeReorderableThreadKeys,
-      draggableThreadKeys,
       pinThread,
-      pinnedKeys,
       planForwardNavigation,
       reorderPinnedThread,
       reorderActiveThread,
@@ -4904,6 +4979,9 @@ export default function Sidebar() {
                             }
                             isPinned={thread.pinnedAt != null}
                             sortable={sortable}
+                            insertionEdge={
+                              insertionMarker?.key === threadKey ? insertionMarker.edge : undefined
+                            }
                             dropVerb={
                               dragState?.activeKey === threadKey
                                 ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { closestCenter, type CollisionDetection } from "@dnd-kit/core";
-import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
+import { arrayMove, verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
   createSidebarCollisionDetection,
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
+  resolveSidebarInsertionMarker,
 } from "./Sidebar.drag";
 import {
   resolveSidebarDropTarget,
@@ -25,6 +26,33 @@ const pinnedHeader = marker("pinned-header");
 const divider = marker("pinned-divider");
 const settledHeader = marker("settled-header");
 const stationary = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
+
+describe("sidebar insertion marker", () => {
+  it.each([
+    ["c", "a", { key: "a", edge: "before" }],
+    ["a", "b", { key: "c", edge: "before" }],
+    ["a", "c", { key: "c", edge: "after" }],
+  ] as const)("marks the committed section position from %s to %s", (active, over, marker) => {
+    const keys = ["a", "b", "c"];
+    const order = arrayMove(keys, keys.indexOf(active), keys.indexOf(over));
+    expect(resolveSidebarInsertionMarker(order, active)).toEqual(marker);
+  });
+
+  it("marks the same position as a main-list drop across the pinned boundary", () => {
+    const items = [pinnedHeader, thread("p", "pinned"), divider, thread("a", "active")];
+    const target = resolveSidebarDropTarget(items, "a", "p");
+    expect(target?.section).toBe("pinned");
+    expect(resolveSidebarInsertionMarker(target!.pinnedOrder, "a")).toEqual({
+      key: "p",
+      edge: "before",
+    });
+  });
+
+  it("does not attach a line to the moving row or to an unrelated list", () => {
+    expect(resolveSidebarInsertionMarker(["a"], "a")).toBeNull();
+    expect(resolveSidebarInsertionMarker(["b", "c"], "a")).toBeNull();
+  });
+});
 
 function layout(
   items: readonly SidebarListItem[],
