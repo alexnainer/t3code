@@ -856,13 +856,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const occurredAt = yield* nowIso;
-      // Snooze retains this slot. Changing it cannot wake the thread, and
-      // accepting it handles races with snooze and retained wake timestamps.
-      if (
-        thread.deletedAt !== null ||
-        thread.pinnedAt != null ||
-        thread.settledOverride === "settled"
-      ) {
+      // Archive-only clients display historical settled threads as active.
+      // Retained settlement and snooze metadata must not prevent arranging
+      // their slot; reordering does not change either lifecycle state.
+      if (thread.deletedAt !== null || thread.pinnedAt != null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: `thread ${command.threadId} is not active and cannot be reordered`,

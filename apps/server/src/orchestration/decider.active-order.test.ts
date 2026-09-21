@@ -103,7 +103,6 @@ it.layer(NodeServices.layer)("active thread ordering", (it) => {
     ["archived", { archivedAt: NOW }],
     ["deleted", { deletedAt: NOW }],
     ["pinned", { pinnedAt: NOW }],
-    ["settled", { settledOverride: "settled", settledAt: NOW }],
   ] satisfies ReadonlyArray<readonly [string, Partial<OrchestrationThread>]>) {
     it.effect(`rejects reordering a ${label} thread`, () =>
       Effect.gen(function* () {
@@ -135,6 +134,34 @@ it.layer(NodeServices.layer)("active thread ordering", (it) => {
       for (const event of events) {
         const projected = yield* projectEvent(readModel, { ...event, sequence: 1 });
         expect(projected.threads[0]).toEqual({ ...readModel.threads[0], activeOrderKey: "m" });
+      }
+    }),
+  );
+
+  it.effect("reorders historical settled chats in archive-only mode without changing history", () =>
+    Effect.gen(function* () {
+      const importedId = ThreadId.make("import:codex:01a0b575-194d-7513-905a-3ba6d4cd3dc4");
+      let readModel = makeReadModel({
+        id: importedId,
+        settledOverride: "settled",
+        settledAt: BEFORE_NOW,
+        activeOrderKey: "g",
+      });
+      const original = readModel.threads[0];
+      for (const orderKey of ["m", "m", "b"]) {
+        const decided = yield* decideOrchestrationCommand({
+          command: { ...reorderCommand, threadId: importedId, orderKey },
+          readModel,
+        });
+        const events = Array.isArray(decided) ? decided : [decided];
+        expect(events).toHaveLength(1);
+        for (const event of events) {
+          readModel = yield* projectEvent(readModel, {
+            ...event,
+            sequence: readModel.snapshotSequence + 1,
+          });
+        }
+        expect(readModel.threads[0]).toEqual({ ...original, activeOrderKey: orderKey });
       }
     }),
   );
