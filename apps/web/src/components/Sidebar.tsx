@@ -58,6 +58,7 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  ArchiveIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
@@ -1053,6 +1054,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   isRenaming: boolean;
   renamingTitle: string;
   onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+  onArchive: (threadRef: ScopedThreadRef) => Promise<void>;
   onSettle: (threadRef: ScopedThreadRef) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
   onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
@@ -1071,6 +1073,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onCancelRename,
     onCommitRename,
     onContextMenu,
+    onArchive,
     onAcknowledgeWoke,
     onFileDropThreads,
     onRenameTitleChange,
@@ -1234,7 +1237,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
 
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
-  const driverKind = providerEntry?.driverKind ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
     shouldShowInstanceBadge(providerEntry, props.providerEntryByInstanceId.values());
@@ -1244,12 +1246,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
     : thread.modelSelection.model;
-
-  // The local environment is "this machine" and needs no marker; every other
-  // one gets its machine glyph. With no local environment (the hosted app)
-  // that is every thread, which is the point: the glyph is what tells rows on
-  // different machines apart.
-  const isRemote = thread.environmentId !== props.currentEnvironmentId;
 
   const detailsTooltip = (
     <SidebarThreadTooltip
@@ -1273,6 +1269,50 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       onThreadClick(event, threadRef);
     },
     [onThreadClick, threadRef],
+  );
+  const [isArchiving, setIsArchiving] = useState(false);
+  const handleArchiveClick = useCallback(
+    async (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isArchiving) return;
+      setIsArchiving(true);
+      try {
+        await onArchive(threadRef);
+      } finally {
+        setIsArchiving(false);
+      }
+    },
+    [isArchiving, onArchive, threadRef],
+  );
+  const isThreadRunning =
+    thread.session?.status === "running" && thread.session.activeTurnId != null;
+  const archiveButton = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Archive ${thread.title}`}
+            data-thread-selection-safe
+            disabled={isThreadRunning || isArchiving}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={handleArchiveClick}
+            className={cn(
+              "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-opacity hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40",
+              "opacity-0 group-hover/sidebar-row:opacity-100 group-focus-within/sidebar-row:opacity-100 max-sm:opacity-100",
+              props.isActive && "opacity-100",
+              props.sortable?.isDragging && "invisible",
+            )}
+          />
+        }
+      >
+        <ArchiveIcon aria-hidden className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        {isThreadRunning ? "Stop the running turn before archiving" : "Archive chat"}
+      </TooltipPopup>
+    </Tooltip>
   );
   const handleAcknowledgeWokeClick = useCallback(
     (event: ReactMouseEvent) => {
@@ -1645,17 +1685,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               />
             }
           >
-            {/* Settled history recedes: dimmed favicon at rest, restored on
-              hover so the tail stays scannable when you're hunting. */}
-            <span
-              className={cn(
-                "shrink-0 transition-opacity",
-                (!props.isActive || variantAction === "unsettle") &&
-                  "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
-              )}
-            >
-              {props.project ? <ProjectFavicon project={props.project} className="size-4" /> : null}
-            </span>
             {draftIndicator}
             {title}
             {pinIndicator}
@@ -1760,6 +1789,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 )}
               </span>
             )}
+            {archiveButton}
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
           </TooltipTrigger>
           {detailsTooltip}
@@ -1774,8 +1804,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        // Compact two-line card plus a one-pixel breathing edge on each side.
-        "list-none py-px [content-visibility:auto] [contain-intrinsic-size:auto_42px]",
+        "list-none [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1798,25 +1827,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             />
           }
         >
-          <div className="relative z-10 h-10 px-[var(--sidebar-row-content-inset)] py-0.5">
-            <div className="flex h-4 min-w-0 items-center gap-1.5">
+          <div className="relative z-10 h-8 px-[var(--sidebar-row-content-inset)]">
+            <div className="flex h-full min-w-0 items-center gap-1.5">
               {draftIndicator}
-              {props.project ? (
-                <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-              ) : null}
-              {props.projectDisplayName ? (
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-secondary-label text-xs",
-                    shouldRecede ? "font-normal" : "font-medium",
-                  )}
-                >
-                  {props.projectDisplayName}
+              {title}
+              {isRegeneratingTitle ? (
+                <span role="status" className="sr-only">
+                  Regenerating title
                 </span>
-              ) : (
-                <span className="flex-1" />
-              )}
+              ) : null}
               {pinIndicator}
+              {terminalStatusIcon}
+              {prBadge}
               {/* The visible state owns this slot's width: status at rest,
                   actions on hover/keyboard focus or while the popover is open. Keeping
                   the hidden state out of flow lets the project label reclaim
@@ -1952,35 +1974,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   ) : null}
                 </span>
               )}
-            </div>
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {title}
-              {isRegeneratingTitle ? (
-                <span role="status" className="sr-only">
-                  Regenerating title
-                </span>
-              ) : null}
-              {terminalStatusIcon}
-              {prBadge}
-              {isRemote ? (
-                <EnvironmentMachineIcon
-                  aria-hidden
-                  kind={props.environmentMachine}
-                  className="size-3.5 shrink-0 text-sidebar-muted-foreground/70"
-                />
-              ) : null}
-              {driverKind ? (
-                <ProviderInstanceIcon
-                  driverKind={driverKind}
-                  displayName={
-                    providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
-                  }
-                  accentColor={providerEntry?.accentColor}
-                  showBadge={showInstanceBadge}
-                  iconClassName="size-3.5 opacity-60"
-                  badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
-                />
-              ) : null}
+              {archiveButton}
             </div>
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
@@ -4233,6 +4227,40 @@ export default function Sidebar() {
     ],
   );
 
+  const attemptArchive = useCallback(
+    async (threadRef: ScopedThreadRef) => {
+      const thread = threadByKeyRef.current.get(scopedThreadKey(threadRef));
+      if (!thread) return;
+      if (confirmThreadArchive) {
+        const api = readLocalApi();
+        if (!api) return;
+        const confirmed = await settlePromise(() =>
+          api.dialogs.confirm(`Archive thread "${thread.title}"?`),
+        );
+        if (confirmed._tag === "Failure" || !confirmed.value) return;
+      }
+      let didArchive = false;
+      const result = await archiveThread(threadRef, {
+        onArchived: () => {
+          didArchive = true;
+        },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: didArchive
+              ? "Thread archived, but navigation failed"
+              : "Failed to archive thread",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    },
+    [archiveThread, confirmThreadArchive],
+  );
+
   const handleThreadContextMenu = useCallback(
     (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
       void (async () => {
@@ -4406,31 +4434,7 @@ export default function Sidebar() {
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
           case "archive": {
-            if (confirmThreadArchive) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(`Archive thread "${thread.title}"?`),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            let didArchive = false;
-            const result = await archiveThread(threadRef, {
-              onArchived: () => {
-                didArchive = true;
-              },
-            });
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: didArchive
-                    ? "Thread archived, but navigation failed"
-                    : "Failed to archive thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
-              return;
-            }
+            await attemptArchive(threadRef);
             return;
           }
           case "delete": {
@@ -4466,14 +4470,13 @@ export default function Sidebar() {
       })();
     },
     [
-      archiveThread,
+      attemptArchive,
       attemptPin,
       attemptSettle,
       attemptSnooze,
       attemptUnpin,
       attemptUnsettle,
       attemptUnsnooze,
-      confirmThreadArchive,
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
@@ -4959,6 +4962,7 @@ export default function Sidebar() {
                             isRenaming={renamingThreadKey === threadKey}
                             renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
                             onContextMenu={handleThreadContextMenu}
+                            onArchive={attemptArchive}
                             onSettle={attemptSettle}
                             onUnsettle={attemptUnsettle}
                             onSnooze={attemptSnooze}
