@@ -4992,7 +4992,12 @@ export default function Sidebar() {
                           </SortableThreadRow>
                         );
                       };
-                      const from = dragState?.activeSection ?? null;
+                      // Only the main list's sorting strategy opens space for
+                      // lifecycle labels. Custom sections sort independently.
+                      const from =
+                        dragState !== null && sortableIds.includes(dragState.activeKey)
+                          ? dragState.activeSection
+                          : null;
                       const items: ReactNode[] = [
                         <ChatFolders
                           key="chat-sections"
