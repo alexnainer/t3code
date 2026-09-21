@@ -1271,20 +1271,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [onThreadClick, threadRef],
   );
   const [isArchiving, setIsArchiving] = useState(false);
-  const handleArchiveClick = useCallback(
-    async (event: ReactMouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (isArchiving) return;
-      setIsArchiving(true);
-      try {
-        await onArchive(threadRef);
-      } finally {
-        setIsArchiving(false);
-      }
-    },
-    [isArchiving, onArchive, threadRef],
-  );
+  const handleArchiveClick = async (event: ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isArchiving) return;
+    setIsArchiving(true);
+    try {
+      await onArchive(threadRef);
+    } finally {
+      setIsArchiving(false);
+    }
+  };
   const isThreadRunning =
     thread.session?.status === "running" && thread.session.activeTurnId != null;
   const archiveButton = (
@@ -1841,7 +1838,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {prBadge}
               {/* The visible state owns this slot's width: status at rest,
                   actions on hover/keyboard focus or while the popover is open. Keeping
-                  the hidden state out of flow lets the project label reclaim
+                  the hidden state out of flow lets the chat title reclaim
                   space without either state overlapping it. */}
               {sortable?.isDragging ? (
                 dragDestination
