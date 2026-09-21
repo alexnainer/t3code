@@ -50,8 +50,27 @@ export function createSidebarCollisionDetection(
   let previousPointerY = options.activationY;
   let boundarySection: "pinned" | "active" | undefined;
   return (args) => {
-    let collisions = closestCenter(args);
     const pointer = args.pointerCoordinates;
+    // The dragged card is clamped to its scroll container and can move as
+    // the preview opens gaps. Hit-test the pointer, not that moving card:
+    // otherwise preview -> card adjustment -> new target can repeat without
+    // another pointer event. Droppable rects remain scroll-aware and exclude
+    // sortable transforms, so scrolling still reveals new targets.
+    let collisions = closestCenter(
+      pointer
+        ? {
+            ...args,
+            collisionRect: {
+              top: pointer.y,
+              bottom: pointer.y,
+              left: pointer.x,
+              right: pointer.x,
+              width: 0,
+              height: 0,
+            },
+          }
+        : args,
+    );
     const items = options.items;
     const source = items?.find((item) => item.kind === "thread" && item.key === args.active.id);
     const boundary = args.droppableContainers

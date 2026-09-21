@@ -3505,29 +3505,35 @@ export default function Sidebar() {
       const target = event.over
         ? resolveSidebarDropTarget(sidebarListItems, String(event.active.id), String(event.over.id))
         : null;
+      const targetSection = target?.section ?? null;
+      const overId = event.over ? String(event.over.id) : null;
       setDragState((current) =>
-        current === null || current.activeKey !== String(event.active.id)
+        current === null ||
+        current.activeKey !== String(event.active.id) ||
+        (current.targetSection === targetSection && current.overId === overId)
           ? current
           : {
               ...current,
-              targetSection: target?.section ?? null,
-              overId: event.over ? String(event.over.id) : null,
+              targetSection,
+              overId,
             },
       );
     },
     [sidebarListItems],
   );
   const sortableIds = useMemo(() => sidebarListItems.map(sidebarListItemId), [sidebarListItems]);
+  const draggedThreadKey = dragState?.activeKey;
+  const dragOccurredAt = dragState?.occurredAt;
   const draggedSettledOrder = useMemo(() => {
-    const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
-    if (dragState === null || thread === undefined) return [];
+    const thread = draggedThreadKey === undefined ? undefined : threadByKey.get(draggedThreadKey);
+    if (dragOccurredAt === undefined || thread === undefined) return [];
     const key = (candidate: EnvironmentThreadShell) =>
       scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
     return sortSettledThreadsForSidebar([
-      ...settledThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
-      applySidebarThreadDrop(thread, "settled", dragState.occurredAt),
+      ...settledThreads.filter((candidate) => key(candidate) !== draggedThreadKey),
+      applySidebarThreadDrop(thread, "settled", dragOccurredAt),
     ]).map(key);
-  }, [dragState, settledThreads, threadByKey]);
+  }, [draggedThreadKey, dragOccurredAt, settledThreads, threadByKey]);
   const sidebarSortingStrategy = useMemo(
     () =>
       createSidebarSortingStrategy({
@@ -3567,7 +3573,6 @@ export default function Sidebar() {
     }),
     [threads],
   );
-  const draggedThreadKey = dragState?.activeKey;
   const draggedFromSection = dragState?.activeSection;
   const dragActivationY = dragState?.activationY;
   const lifecycleCollisionDetection = useMemo(() => {

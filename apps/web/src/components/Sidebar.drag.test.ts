@@ -154,6 +154,58 @@ describe("sidebar collision detection", () => {
     expect(detector(collisionArgs())[0]?.id).toBe("blocked");
   });
 
+  it("keeps a stationary pointer target when the dragged card is repeatedly adjusted", () => {
+    const args = collisionArgs();
+    const target = args.droppableRects.get("blocked")!;
+    const source = args.droppableRects.get("source")!;
+    const detector = createSidebarCollisionDetection(() => true);
+    const pointerCoordinates = {
+      x: target.left + target.width / 2,
+      y: target.top + target.height / 2,
+    };
+    // Model the preview and scroll-container modifier adjusting the lifted
+    // card on successive renders, without moving the user's pointer.
+    for (let frame = 0; frame < 20; frame++) {
+      expect(
+        detector({
+          ...args,
+          pointerCoordinates,
+          collisionRect: frame % 2 === 0 ? target : source,
+        })[0]?.id,
+      ).toBe("blocked");
+    }
+    expect(
+      detector({
+        ...args,
+        pointerCoordinates: { x: pointerCoordinates.x, y: source.top + source.height / 2 },
+      })[0]?.id,
+    ).toBe("source");
+  });
+
+  it("updates a stationary pointer target when the list scrolls", () => {
+    const args = collisionArgs();
+    const target = args.droppableRects.get("blocked")!;
+    const source = args.droppableRects.get("source")!;
+    const detector = createSidebarCollisionDetection(() => true);
+    const pointerCoordinates = {
+      x: source.left + source.width / 2,
+      y: source.top + source.height / 2,
+    };
+    expect(detector({ ...args, pointerCoordinates })[0]?.id).toBe("source");
+    const scrollDelta = target.top - source.top;
+    const droppableRects = new Map(
+      [...args.droppableRects].map(([id, rect]) => [
+        id,
+        {
+          ...rect,
+          top: rect.top - scrollDelta,
+          bottom: rect.bottom - scrollDelta,
+        },
+      ]),
+    );
+    expect(detector({ ...args, pointerCoordinates, droppableRects })[0]?.id).toBe("blocked");
+  });
+
   it.each([
     { sourceSection: "active", pins: 0 },
     { sourceSection: "active", pins: 1 },
