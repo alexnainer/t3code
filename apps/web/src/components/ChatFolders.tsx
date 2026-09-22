@@ -11,6 +11,7 @@ import { chatFolderKey, CHAT_FOLDER_DROP_PREFIX, OTHER_CHATS_DROP_ID } from "../
 import { type useChatFolders } from "../hooks/useChatFolders";
 import { toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
@@ -157,36 +158,45 @@ export function ChatFolders({
                   void openMenu(folder, { x: event.clientX, y: event.clientY });
                 }}
               >
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  aria-label={folder.name}
-                  title={`${folder.name}${project ? ` · ${project.title}` : ""} — ${threads.length} chats`}
-                  onClick={() => onToggle(key)}
-                  className={cn(
-                    "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-[var(--sidebar-row-content-inset)] text-left outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                    sectionHeadingClassName,
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "text-xs font-normal text-sidebar-muted-foreground tabular-nums",
-                      expanded && sectionControlsClassName,
-                    )}
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-label={folder.name}
+                        onClick={() => onToggle(key)}
+                        className={cn(
+                          "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-[var(--sidebar-row-content-inset)] text-left outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                          sectionHeadingClassName,
+                        )}
+                      />
+                    }
                   >
-                    {threads.length}
-                  </span>
-                  {expanded ? (
-                    <ChevronDownIcon
+                    <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                    <span
                       aria-hidden
-                      className={cn("size-3.5 shrink-0", sectionControlsClassName)}
-                    />
-                  ) : (
-                    <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
-                  )}
-                </button>
+                      className={cn(
+                        "text-xs font-normal text-sidebar-muted-foreground tabular-nums",
+                        expanded && sectionControlsClassName,
+                      )}
+                    >
+                      {threads.length}
+                    </span>
+                    {expanded ? (
+                      <ChevronDownIcon
+                        aria-hidden
+                        className={cn("size-3.5 shrink-0", sectionControlsClassName)}
+                      />
+                    ) : (
+                      <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+                    )}
+                  </TooltipTrigger>
+                  <TooltipPopup side="right">
+                    {folder.name}
+                    {project ? ` · ${project.title}` : ""} — {threads.length} chats
+                  </TooltipPopup>
+                </Tooltip>
                 <Button
                   variant="ghost-muted"
                   size="icon-xs"
