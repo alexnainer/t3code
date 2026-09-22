@@ -5196,7 +5196,7 @@ export default function Sidebar() {
                                   );
                                 })}
                               </SortableContext>
-                              <li className="hidden px-2.5 py-1 text-xs text-sidebar-muted-foreground only:block">
+                              <li className="hidden px-[var(--sidebar-row-content-inset)] py-1 text-xs text-sidebar-muted-foreground only:block">
                                 Start a chat with + or move one here from its menu.
                               </li>
                             </>

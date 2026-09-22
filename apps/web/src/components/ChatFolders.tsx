@@ -27,6 +27,10 @@ import {
 type Folders = ReturnType<typeof useChatFolders>;
 type Folder = Folders["folders"][number];
 
+const sectionHeadingClassName = "text-sm font-semibold text-sidebar-foreground/80";
+const sectionControlsClassName =
+  "opacity-0 group-hover/chat-section:opacity-100 group-focus-within/chat-section:opacity-100 pointer-coarse:opacity-100";
+
 function SectionDropTarget({
   id,
   label,
@@ -45,7 +49,7 @@ function SectionDropTarget({
       aria-label={label}
       data-thread-selection-safe
       className={cn(
-        flushBottom ? "mb-0" : "mb-2",
+        flushBottom ? "mb-0" : "mb-5",
         "rounded-md",
         isOver && "bg-primary/5 ring-1 ring-primary/40",
       )}
@@ -114,7 +118,7 @@ export function ChatFolders({
   return (
     <li className="list-none">
       <section aria-label="Chat sections">
-        <div className="flex h-8 items-center justify-between px-2">
+        <div className="mb-1 flex h-8 items-center justify-between px-[var(--sidebar-row-content-inset)]">
           <span className="text-xs font-medium text-sidebar-muted-foreground">Sections</span>
           <Button
             variant="ghost-muted"
@@ -147,7 +151,7 @@ export function ChatFolders({
             >
               <div
                 data-chat-section-header
-                className="flex items-center gap-1 rounded-md hover:bg-sidebar-row-hover"
+                className="group/chat-section flex items-center gap-1 rounded-md hover:bg-sidebar-row-hover"
                 onContextMenu={(event) => {
                   event.preventDefault();
                   void openMenu(folder, { x: event.clientX, y: event.clientY });
@@ -156,27 +160,37 @@ export function ChatFolders({
                 <button
                   type="button"
                   aria-expanded={expanded}
+                  aria-label={folder.name}
+                  title={`${folder.name}${project ? ` · ${project.title}` : ""} — ${threads.length} chats`}
                   onClick={() => onToggle(key)}
-                  className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {expanded ? (
-                    <ChevronDownIcon className="size-3.5 shrink-0" />
-                  ) : (
-                    <ChevronRightIcon className="size-3.5 shrink-0" />
+                  className={cn(
+                    "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-[var(--sidebar-row-content-inset)] text-left outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                    sectionHeadingClassName,
                   )}
-                  <span className="min-w-0 flex-1 truncate">
-                    {folder.name}
-                    {supportedProjects.length > 1 ? (
-                      <span className="font-normal"> · {project?.title}</span>
-                    ) : null}
-                  </span>
-                  <span data-chat-section-count className="tabular-nums">
+                >
+                  <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "text-xs font-normal text-sidebar-muted-foreground tabular-nums",
+                      expanded && sectionControlsClassName,
+                    )}
+                  >
                     {threads.length}
                   </span>
+                  {expanded ? (
+                    <ChevronDownIcon
+                      aria-hidden
+                      className={cn("size-3.5 shrink-0", sectionControlsClassName)}
+                    />
+                  ) : (
+                    <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+                  )}
                 </button>
                 <Button
                   variant="ghost-muted"
                   size="icon-xs"
+                  className={sectionControlsClassName}
                   aria-label={`New chat in ${folder.name}`}
                   title={`New chat in ${folder.name}`}
                   onClick={() => onNewThread(folder)}
@@ -186,7 +200,7 @@ export function ChatFolders({
                 <Button
                   variant="ghost-muted"
                   size="icon-xs"
-                  className="mr-1"
+                  className={cn("mr-1", sectionControlsClassName)}
                   aria-label={`Options for ${folder.name}`}
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
@@ -197,16 +211,19 @@ export function ChatFolders({
                 </Button>
               </div>
               {expanded ? (
-                <ul className="flex flex-col gap-px">
-                  {renderThreads(folder, threads)}
-                </ul>
+                <ul className="flex flex-col gap-px">{renderThreads(folder, threads)}</ul>
               ) : null}
             </SectionDropTarget>
           );
         })}
         {visibleFolders.length > 0 ? (
           <SectionDropTarget id={OTHER_CHATS_DROP_ID} label="Other chats" flushBottom>
-            <div className="px-2 py-2 text-xs font-medium text-sidebar-muted-foreground">
+            <div
+              className={cn(
+                "flex h-8 items-center px-[var(--sidebar-row-content-inset)]",
+                sectionHeadingClassName,
+              )}
+            >
               Other chats
             </div>
           </SectionDropTarget>
