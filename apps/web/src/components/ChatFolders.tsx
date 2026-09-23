@@ -28,7 +28,8 @@ import {
 type Folders = ReturnType<typeof useChatFolders>;
 type Folder = Folders["folders"][number];
 
-const sectionHeadingClassName = "text-sm font-medium text-foreground/90";
+const sectionHeadingClassName =
+  "text-sm font-semibold text-sidebar-muted-foreground dark:text-sidebar-foreground/45";
 const sectionControlsClassName =
   "opacity-0 group-hover/chat-section:opacity-100 group-focus-within/chat-section:opacity-100 pointer-coarse:opacity-100";
 
