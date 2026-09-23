@@ -6005,18 +6005,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 variant={activePendingApproval ? "warning" : "info"}
               >
                 {activePendingApproval ? (
-                  <ComposerBanner.Row
-                    layout="wrap-actions"
+                  <div
+                    className="space-y-3 px-3 pt-2 pb-1"
                     data-chat-composer-collapsed-controls="true"
                   >
-                    <ComposerBanner.Icon />
-                    <ComposerBanner.Content>
-                      <ComposerPendingApprovalPanel
-                        approval={activePendingApproval}
-                        pendingCount={pendingApprovals.length}
-                      />
-                    </ComposerBanner.Content>
-                    <ComposerBanner.Actions>
+                    <ComposerPendingApprovalPanel
+                      approval={activePendingApproval}
+                      pendingCount={pendingApprovals.length}
+                    />
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       <ComposerPendingApprovalActions
                         requestId={activePendingApproval.requestId}
                         isResponding={respondingRequestIds.includes(
@@ -6025,8 +6022,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         options={activePendingApproval.options}
                         onRespondToApproval={onRespondToApproval}
                       />
-                    </ComposerBanner.Actions>
-                  </ComposerBanner.Row>
+                    </div>
+                  </div>
                 ) : !isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
@@ -6688,8 +6685,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPaste={onComposerPaste}
                     placeholder={
                       isComposerApprovalState
-                        ? (activePendingApproval?.detail ??
-                          "Resolve this approval request to continue")
+                        ? "Choose an approval option above to continue"
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? "Choose an option above"

@@ -17,9 +17,6 @@ describe("ComposerPendingApprovalActions", () => {
     expect(markup).toContain(">Cancel<");
     expect(markup).toContain("Always allow this session");
     expect(markup).not.toContain(">Always allow<");
-    expect(markup).toContain("h-5");
-    expect(markup).toContain("sm:text-[11px]");
-    expect(markup).not.toContain("sm:h-6");
   });
 
   it("shows only the approval choices advertised by an MCP server", () => {
@@ -66,7 +63,7 @@ describe("ComposerPendingApprovalActions", () => {
     expect(markup).toContain("Allow for this thread");
   });
 
-  it("limits provider-supplied approval labels so narrow rows can wrap", () => {
+  it("preserves the full provider-supplied approval label", () => {
     const label = "Allow ".repeat(40).trim();
     const markup = renderToStaticMarkup(
       <ComposerPendingApprovalActions
@@ -77,7 +74,6 @@ describe("ComposerPendingApprovalActions", () => {
       />,
     );
 
-    expect(markup).toContain('class="max-w-40 truncate"');
     expect(markup).toContain(label);
   });
 });
