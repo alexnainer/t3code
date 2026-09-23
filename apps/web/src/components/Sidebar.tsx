@@ -331,6 +331,30 @@ function terminalProcessLabel(count: number): string {
   return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
 }
 
+function SidebarModelIcon({
+  providerEntry,
+  modelLabel,
+}: {
+  providerEntry: ProviderInstanceEntry | null;
+  modelLabel: string;
+}) {
+  if (!providerEntry) return null;
+  return (
+    <span
+      role="img"
+      aria-label={`${providerEntry.displayName}: ${modelLabel}`}
+      className="inline-flex shrink-0 items-center text-sidebar-muted-foreground"
+    >
+      <ProviderInstanceIcon
+        driverKind={providerEntry.driverKind}
+        displayName={providerEntry.displayName}
+        className="z-auto"
+        iconClassName="size-3.5"
+      />
+    </span>
+  );
+}
+
 function SidebarThreadTooltip({
   thread,
   project,
@@ -1689,6 +1713,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           >
             {draftIndicator}
             {title}
+            <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1834,6 +1859,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <div className="flex h-full min-w-0 items-center gap-1.5">
               {draftIndicator}
               {title}
+              <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -2114,6 +2140,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             <ProjectFavicon project={props.project} className="size-4 shrink-0" />
           ) : null}
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+          <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
           </span>
