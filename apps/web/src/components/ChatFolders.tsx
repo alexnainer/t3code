@@ -28,7 +28,7 @@ import {
 type Folders = ReturnType<typeof useChatFolders>;
 type Folder = Folders["folders"][number];
 
-const sectionHeadingClassName = "text-sm font-semibold text-sidebar-foreground/80";
+const sectionHeadingClassName = "text-sm font-medium text-foreground/90";
 const sectionControlsClassName =
   "opacity-0 group-hover/chat-section:opacity-100 group-focus-within/chat-section:opacity-100 pointer-coarse:opacity-100";
 
@@ -152,7 +152,7 @@ export function ChatFolders({
             >
               <div
                 data-chat-section-header
-                className="group/chat-section flex items-center gap-1 rounded-md hover:bg-sidebar-row-hover"
+                className="group/chat-section flex items-center gap-1"
                 onContextMenu={(event) => {
                   event.preventDefault();
                   void openMenu(folder, { x: event.clientX, y: event.clientY });
@@ -167,7 +167,7 @@ export function ChatFolders({
                         aria-label={folder.name}
                         onClick={() => onToggle(key)}
                         className={cn(
-                          "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-[var(--sidebar-row-content-inset)] text-left outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                          "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-[var(--sidebar-row-content-inset)] text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           sectionHeadingClassName,
                         )}
                       />
