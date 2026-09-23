@@ -343,7 +343,7 @@ function SidebarModelIcon({
     <span
       role="img"
       aria-label={`${providerEntry.displayName}: ${modelLabel}`}
-      className="inline-flex shrink-0 items-center text-sidebar-muted-foreground"
+      className="inline-flex size-4 shrink-0 items-center justify-center text-sidebar-muted-foreground"
     >
       <ProviderInstanceIcon
         driverKind={providerEntry.driverKind}
@@ -1713,7 +1713,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           >
             {draftIndicator}
             {title}
-            <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1816,6 +1815,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 )}
               </span>
             )}
+            <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
             {archiveButton}
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
           </TooltipTrigger>
@@ -1859,7 +1859,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <div className="flex h-full min-w-0 items-center gap-1.5">
               {draftIndicator}
               {title}
-              <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -2003,6 +2002,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   ) : null}
                 </span>
               )}
+              <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
               {archiveButton}
             </div>
           </div>
@@ -2140,10 +2140,10 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             <ProjectFavicon project={props.project} className="size-4 shrink-0" />
           ) : null}
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
-          <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
           </span>
+          <SidebarModelIcon providerEntry={providerEntry} modelLabel={modelLabel} />
         </TooltipTrigger>
         <SidebarThreadTooltip
           thread={thread}
